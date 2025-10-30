@@ -1,6 +1,7 @@
 
-import React, { useState, useRef, useContext } from 'react';
-import { ExpandedNode, User, LogEntry, MockupPrompt, ArtRef, Sample, CutTemplate, Status } from './types';
+
+import React, { useState, useRef, useContext, useEffect } from 'react';
+import { ExpandedNode, User, LogEntry, MockupPrompt, ArtRef, Sample, CutTemplate, Status, Job } from './types';
 import ArtColumn from './components/ArtColumn';
 import CutColumn from './components/CutColumn';
 import MockupColumn from './components/MockupColumn';
@@ -20,6 +21,8 @@ import { useApiKeys } from './hooks/useApiKeys';
 import ConnectionLines from './components/viewer/ConnectionLines';
 import ImageEditor from './components/ImageEditor';
 import TabBar from './components/TabBar';
+import QueueManagerModal from './components/QueueManagerModal';
+import AnnouncementBanner from './components/AnnouncementBanner';
 
 
 const App: React.FC = () => {
@@ -48,13 +51,17 @@ const App: React.FC = () => {
     const [isImageEditorOpen, setIsImageEditorOpen] = useState(false);
     const [isUpscaled, setIsUpscaled] = useState(false);
     
+    // Batch Mode State
+    const [isBatchMode, setIsBatchMode] = useState(false);
+    const [jobQueue, setJobQueue] = useState<Job[]>([]);
+    const [isQueueManagerOpen, setIsQueueManagerOpen] = useState(false);
+
     const sparkleRef = useRef<SparkleInstance>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
     const { apiKeys } = useApiKeys(auth.user);
 
     const userApiKey = apiKeys.find(k => k.id === auth.user?.apiKeyId)?.key;
 
-    // New state for mobile tab navigation
     const [activeTab, setActiveTab] = useState<'art' | 'cut' | 'mockup'>('art');
 
     const showStatus = (message: string, type: Status['type'] = 'info', duration = 3000) => {
@@ -136,7 +143,7 @@ const App: React.FC = () => {
             return;
         }
     
-        setCurrentMockups([]); // Clear previous results from the UI
+        setCurrentMockups([]);
         setIsLoading(true);
         const totalJobs = prompts.length * count;
         setProgress({ done: 0, total: totalJobs, label: 'Generating mockups...' });
@@ -193,6 +200,124 @@ const App: React.FC = () => {
         }
     };
 
+    const handleAddToQueue = (prompts: MockupPrompt[], count: number, aspectRatio: string, sku: string) => {
+        if (!artwork) {
+            showStatus('Please apply an artwork first.', 'err');
+            return;
+        }
+
+        const newJob: Job = {
+            id: `job-${Date.now()}`,
+            sku,
+            artworkUrl: artwork,
+            prompts,
+            count,
+            aspectRatio,
+            status: 'queued',
+            progress: { done: 0, total: prompts.length * count },
+            results: [],
+            createdAt: Date.now(),
+        };
+
+        setJobQueue(prev => [...prev, newJob]);
+        showStatus(`Added ${newJob.progress.total} task(s) for SKU '${sku || 'Untitled'}' to the queue.`, 'ok');
+    };
+
+    // Effect to process the job queue
+    useEffect(() => {
+        if (isLoading || !isBatchMode) {
+            return; // A job is already running or batch mode is off
+        }
+
+        const nextJob = jobQueue.find(j => j.status === 'queued');
+        if (nextJob) {
+            setIsLoading(true); // Set global loading lock
+
+            setJobQueue(prev => prev.map(j => j.id === nextJob.id ? { ...j, status: 'running' } : j));
+            
+            abortControllerRef.current = new AbortController();
+            const { signal } = abortControllerRef.current;
+            
+            const runGeneration = async () => {
+                 try {
+                    const downscaledArtwork = await downscaleDataUrl(nextJob.artworkUrl);
+                    const downscaledSamples = await Promise.all(samples.map(s => downscaleDataUrl(s.dataUrl)));
+            
+                    let jobsCompleted = 0;
+                    for (const prompt of nextJob.prompts) {
+                        for (let i = 0; i < nextJob.count; i++) {
+                            if (signal.aborted) throw new Error("Operation cancelled by user.");
+                            
+                            const resultId = `${prompt.id}-${i}-${Date.now()}`;
+                            
+                            try {
+                                const resultUrl = await geminiService.generateMockup(prompt.prompt, nextJob.aspectRatio, downscaledSamples, downscaledArtwork, userApiKey!);
+                                if (signal.aborted) throw new Error("Operation cancelled by user.");
+                                const newEntry: LogEntry = { id: resultId, type: 'mockup', prompt: prompt.prompt, dataUrl: resultUrl, createdAt: Date.now() };
+                                await addResultToLog(newEntry);
+                                setJobQueue(prev => prev.map(j => j.id === nextJob.id ? { ...j, results: [...j.results, newEntry] } : j));
+
+                            } catch (error: any) {
+                                if (signal.aborted) throw new Error("Operation cancelled by user.");
+                                 const newEntry: LogEntry = { id: resultId, type: 'mockup', prompt: prompt.prompt, dataUrl: '', error: error.message || 'Generation failed', createdAt: Date.now() };
+                                 await addResultToLog(newEntry);
+                                 setJobQueue(prev => prev.map(j => j.id === nextJob.id ? { ...j, results: [...j.results, newEntry] } : j));
+                            } finally {
+                                if (!signal.aborted) {
+                                    jobsCompleted++;
+                                    setJobQueue(prev => prev.map(j => j.id === nextJob.id ? { ...j, progress: {...j.progress, done: jobsCompleted} } : j));
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (!signal.aborted) {
+                        let finalResults: LogEntry[] = [];
+                        setJobQueue(prev => {
+                            const updatedJobs = prev.map(j => {
+                                if (j.id === nextJob.id) {
+                                    finalResults = j.results; // Grab results from the freshest state
+                                    return { ...j, status: 'completed' };
+                                }
+                                return j;
+                            });
+                            return updatedJobs;
+                        });
+                        setCurrentMockups(prev => [...finalResults, ...prev]);
+                    }
+                } catch (error: any) {
+                     if (error.message.includes("cancelled by user")) {
+                        setJobQueue(prev => prev.map(j => j.id === nextJob.id ? { ...j, status: 'cancelled' } : j));
+                     } else {
+                        setJobQueue(prev => prev.map(j => j.id === nextJob.id ? { ...j, status: 'error', error: error.message } : j));
+                     }
+                } finally {
+                    setIsLoading(false); // Release the lock to allow the next job to start
+                }
+            };
+            runGeneration();
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [jobQueue, isLoading, isBatchMode]);
+
+    const handleCancelJob = (jobId: string) => {
+        const jobToCancel = jobQueue.find(j => j.id === jobId);
+        if (!jobToCancel) return;
+
+        if (jobToCancel.status === 'running') {
+            if (abortControllerRef.current) {
+                abortControllerRef.current.abort(); // This will trigger the catch block in runGeneration
+            }
+        } else if (jobToCancel.status === 'queued') {
+            setJobQueue(prev => prev.map(j => j.id === jobId ? { ...j, status: 'cancelled' } : j));
+        }
+    };
+
+    const handleClearCompletedJobs = () => {
+        setJobQueue(prev => prev.filter(j => j.status === 'queued' || j.status === 'running'));
+        showStatus('Cleared completed jobs from the list.', 'ok');
+    };
+
     const handleExpandImage = async (source: { id: string; dataUrl: string }, ratio: string, sourceEl: HTMLElement) => {
         if (!userApiKey) {
             showStatus('Your account does not have an API key assigned.', 'err');
@@ -240,7 +365,6 @@ const App: React.FC = () => {
                 const dataToSave = isUpscaled ? await upscale2xDataURL(node.dataUrl) : node.dataUrl;
                 downloadDataUrl(dataToSave, `expanded-${node.ratioLabel}-${node.id.slice(-6)}.png`);
                 savedCount++;
-                // Add a small delay between downloads to prevent browser issues
                 await new Promise(res => setTimeout(res, 200));
             }
             showStatus(`Successfully saved ${savedCount} expanded image(s).`, 'ok');
@@ -264,6 +388,7 @@ const App: React.FC = () => {
                 onImageLogClick={() => setIsImageLogOpen(true)}
                 onImageEditorClick={() => setIsImageEditorOpen(true)}
             />
+            <AnnouncementBanner />
             <StatusToast status={status} />
             <ImageViewer
                 isOpen={!!viewerData}
@@ -274,7 +399,7 @@ const App: React.FC = () => {
                     if (viewerData) {
                         handleExpandImage({ id: viewerData.sourceId, dataUrl: viewerData.imageUrl }, ratio, viewerData.sourceEl);
                     }
-                    setViewerData(null); // Close viewer after expanding
+                    setViewerData(null);
                 }}
             />
             <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
@@ -293,6 +418,14 @@ const App: React.FC = () => {
                 showStatus={showStatus}
                 user={auth.user}
             />
+            <QueueManagerModal
+                isOpen={isQueueManagerOpen}
+                onClose={() => setIsQueueManagerOpen(false)}
+                jobs={jobQueue}
+                onCancelJob={handleCancelJob}
+                onClearCompleted={handleClearCompletedJobs}
+                isUpscaled={isUpscaled}
+            />
             
             <main className="flex-1 md:grid md:grid-cols-3 md:grid-rows-1 gap-3 p-3 min-h-0 pb-16 md:pb-3">
                 <div className={`md:block h-full ${activeTab === 'art' ? 'block' : 'hidden'}`}>
@@ -306,7 +439,7 @@ const App: React.FC = () => {
                         onArtRefsChange={setArtRefs}
                         samples={samples}
                         onSamplesChange={setSamples}
-                        isLoading={isLoading && progress.total === 0}
+                        isLoading={isLoading && progress.total === 0 && !isBatchMode}
                         onGenerate={handleGenerateArt}
                         onCancel={handleCancel}
                         user={auth.user}
@@ -325,7 +458,7 @@ const App: React.FC = () => {
                 </div>
                  <div className={`md:block h-full ${activeTab === 'mockup' ? 'block' : 'hidden'}`}>
                     <MockupColumn
-                        isLoading={isLoading && progress.total > 0}
+                        isLoading={isLoading && !isBatchMode}
                         progress={progress}
                         results={currentMockups}
                         onGenerate={handleGenerateMockups}
@@ -335,6 +468,11 @@ const App: React.FC = () => {
                         onUpscaleChange={setIsUpscaled}
                         onSaveAllExpanded={handleSaveAllExpanded}
                         user={auth.user}
+                        isBatchMode={isBatchMode}
+                        onBatchModeChange={setIsBatchMode}
+                        onAddToQueue={handleAddToQueue}
+                        jobQueue={jobQueue}
+                        onOpenQueueManager={() => setIsQueueManagerOpen(true)}
                     />
                 </div>
             </main>

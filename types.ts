@@ -69,4 +69,24 @@ export interface ExpandedNode {
     position: { x: number; y: number };
 }
 
+export interface Job {
+  id: string;
+  sku: string;
+  artworkUrl: string;
+  prompts: MockupPrompt[];
+  count: number;
+  aspectRatio: string;
+  status: 'queued' | 'running' | 'completed' | 'cancelled' | 'error';
+  progress: { done: number; total: number };
+  results: LogEntry[];
+  createdAt: number;
+  error?: string;
+}
+
+
 export type User = AuthUser;
+
+export interface AppSettings {
+    announcementText: string;
+    announcementEnabled: boolean;
+}

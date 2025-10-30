@@ -38,7 +38,7 @@ const AuthGate: React.FC = () => {
                 </div>
                 
                 <div className="mt-6 text-xl font-bold tracking-widest text-gray-300 animate-fade-in-out">
-                    INITIALIZING
+                    LOADINGGG...
                 </div>
                 
                 <style>

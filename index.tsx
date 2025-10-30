@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { AuthProvider } from './contexts/AuthContext';
 import AuthGate from './AuthGate';
+import { AppSettingsProvider } from './contexts/AppSettingsContext';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -12,7 +13,9 @@ const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
     <AuthProvider>
-      <AuthGate />
+      <AppSettingsProvider>
+        <AuthGate />
+      </AppSettingsProvider>
     </AuthProvider>
   </React.StrictMode>
 );

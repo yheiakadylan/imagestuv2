@@ -5,6 +5,7 @@ import ApiKeyPanel from './settings/ApiKeyPanel';
 import PromptTemplatePanel from './settings/PromptTemplatePanel';
 import ImageTemplatePanel from './settings/ImageTemplatePanel';
 import CutTemplatePanel from './settings/CutTemplatePanel';
+import AnnouncementPanel from './settings/AnnouncementPanel';
 import { ArtRef, CutTemplate, Sample, Template } from '../types';
 import { AuthContext } from '../contexts/AuthContext';
 
@@ -13,15 +14,16 @@ interface SettingsModalProps {
     onClose: () => void;
 }
 
-type Tab = 'api' | 'prompts' | 'samples' | 'refs' | 'cuts' | 'users';
+type Tab = 'api' | 'prompts' | 'samples' | 'refs' | 'cuts' | 'users' | 'announcement';
 
-const ALL_TABS: { id: Tab, label: string, adminOnly: boolean }[] = [
-    { id: 'api', label: 'API Keys', adminOnly: true },
-    { id: 'users', label: 'User Management', adminOnly: true },
-    { id: 'prompts', label: 'Mockup Prompts', adminOnly: false },
-    { id: 'samples', label: 'Product Samples', adminOnly: false },
-    { id: 'refs', label: 'Art References', adminOnly: false },
-    { id: 'cuts', label: 'Cut Templates', adminOnly: false },
+const ALL_TABS: { id: Tab, label: string, adminOnly: boolean, managerOrAdmin: boolean }[] = [
+    { id: 'announcement', label: 'Announcement', adminOnly: true, managerOrAdmin: false },
+    { id: 'api', label: 'API Keys', adminOnly: true, managerOrAdmin: false },
+    { id: 'users', label: 'User Management', adminOnly: true, managerOrAdmin: false },
+    { id: 'prompts', label: 'Mockup Prompts', adminOnly: false, managerOrAdmin: true },
+    { id: 'samples', label: 'Product Samples', adminOnly: false, managerOrAdmin: true },
+    { id: 'refs', label: 'Art References', adminOnly: false, managerOrAdmin: true },
+    { id: 'cuts', label: 'Cut Templates', adminOnly: false, managerOrAdmin: true },
 ];
 
 const ChevronDownIcon = () => (
@@ -36,7 +38,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
 
     const availableTabs = useMemo(() => {
         if (auth.user?.role === 'admin') return ALL_TABS;
-        if (auth.user?.role === 'manager') return ALL_TABS.filter(t => !t.adminOnly);
+        if (auth.user?.role === 'manager') return ALL_TABS.filter(t => t.managerOrAdmin);
         return [];
     }, [auth.user?.role]);
     
@@ -54,6 +56,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
 
     const renderContent = () => {
         switch (activeTab) {
+            case 'announcement': return auth.user?.role === 'admin' ? <AnnouncementPanel /> : null;
             case 'api': return auth.user?.role === 'admin' ? <ApiKeyPanel /> : null;
             case 'users': return auth.user?.role === 'admin' ? <UserManagementPanel /> : null;
             case 'prompts': return <PromptTemplatePanel />;
