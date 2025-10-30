@@ -4,6 +4,7 @@ import Button from './common/Button';
 import { downloadDataUrl } from '../utils/fileUtils';
 import Select from './common/Select';
 import CachedImage from './common/CachedImage';
+import Spinner from './common/Spinner';
 
 interface ImageLogModalProps {
     isOpen: boolean;
@@ -19,6 +20,7 @@ const ImageLogModal: React.FC<ImageLogModalProps> = ({ isOpen, onClose, results,
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [selectedUserId, setSelectedUserId] = useState('all');
     const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     useEffect(() => {
         if (isOpen) {
@@ -75,12 +77,15 @@ const ImageLogModal: React.FC<ImageLogModalProps> = ({ isOpen, onClose, results,
         const count = selectedIds.size;
         if (count === 0) return;
         if (window.confirm(`Are you sure you want to delete ${count} image(s)? This will also delete them from storage and cannot be undone.`)) {
+            setIsDeleting(true);
             try {
                 await onDelete(Array.from(selectedIds));
                 showStatus(`${count} image(s) deleted.`, 'ok');
                 setSelectedIds(new Set());
             } catch (error: any) {
                 showStatus(`Error deleting images: ${error.message}`, 'err', 5000);
+            } finally {
+                setIsDeleting(false);
             }
         }
     };
@@ -141,8 +146,8 @@ const ImageLogModal: React.FC<ImageLogModalProps> = ({ isOpen, onClose, results,
                         <Button variant="ghost" onClick={handleDownloadSelected} disabled={selectedIds.size === 0}>
                             Download ({selectedIds.size})
                         </Button>
-                        <Button variant="warn" onClick={handleDeleteSelected} disabled={selectedIds.size === 0}>
-                            Delete ({selectedIds.size})
+                        <Button variant="warn" onClick={handleDeleteSelected} disabled={isDeleting || selectedIds.size === 0}>
+                            {isDeleting ? <><Spinner className="mr-2"/> Deleting...</> : `Delete (${selectedIds.size})`}
                         </Button>
                         <Button variant="ghost" onClick={onClose} className="!px-3 !py-1">✕</Button>
                     </div>

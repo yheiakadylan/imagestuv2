@@ -5,18 +5,30 @@ import Button from '../common/Button';
 import { fileToBase64, readImagesFromClipboard, uploadDataUrlToStorage, deleteFromCloudinary, downloadJson, readJsonFromFile } from '../../utils/fileUtils';
 import { saveImage } from '../../services/cacheService';
 import CachedImage from '../common/CachedImage';
+import Spinner from '../common/Spinner';
 
 const CutTemplatePanel: React.FC = () => {
     const { templates, addTemplate, deleteTemplate, updateTemplate } = useTemplates<CutTemplate>('DIECUT_TEMPLATES');
     const [name, setName] = useState('');
+    const [isAdding, setIsAdding] = useState(false);
+    const [isImporting, setIsImporting] = useState(false);
+    const [deletingId, setDeletingId] = useState<string | null>(null);
 
     const handleAdd = async (newName: string, data: Partial<Omit<CutTemplate, 'id' | 'createdAt' | 'name'>>) => {
         if (!newName.trim()) {
             alert('Template name is required.');
             return;
         }
-        await addTemplate({ name: newName.trim(), ...data } as any);
-        setName('');
+        setIsAdding(true);
+        try {
+            await addTemplate({ name: newName.trim(), ...data } as any);
+            setName('');
+        } catch (error) {
+            console.error("Error adding cut template:", error);
+            alert("Failed to add cut template.");
+        } finally {
+            setIsAdding(false);
+        }
     };
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -71,6 +83,7 @@ const CutTemplatePanel: React.FC = () => {
 
     const handleDelete = async (template: CutTemplate) => {
         if (window.confirm('Are you sure? This will also delete the file from storage.')) {
+            setDeletingId(template.id);
             try {
                 if (template.pngMaskPublicId) {
                     await deleteFromCloudinary(template.pngMaskPublicId);
@@ -78,6 +91,8 @@ const CutTemplatePanel: React.FC = () => {
                 await deleteTemplate(template.id);
             } catch (error: any) {
                 alert(`Failed to delete template: ${error.message}`);
+            } finally {
+                setDeletingId(null);
             }
         }
     };
@@ -100,6 +115,7 @@ const CutTemplatePanel: React.FC = () => {
         const file = e.target.files?.[0];
         if (!file) return;
 
+        setIsImporting(true);
         try {
             const importedData = await readJsonFromFile<Omit<CutTemplate, 'id' | 'createdAt'>[]>(file);
             if (!Array.isArray(importedData)) {
@@ -120,6 +136,7 @@ const CutTemplatePanel: React.FC = () => {
             alert(`Import failed: ${error.message}`);
         } finally {
             e.target.value = '';
+            setIsImporting(false);
         }
     };
 
@@ -139,9 +156,11 @@ const CutTemplatePanel: React.FC = () => {
                             className="w-full p-2.5 rounded-lg border border-white/20 bg-black/20 text-gray-200 outline-none"
                         />
                     </div>
-                    <Button variant="ghost" onClick={handlePaste}>Paste</Button>
-                    <Button variant="ghost" onClick={() => document.getElementById('cut-file-input')?.click()}>
-                        Choose File
+                    <Button variant="ghost" onClick={handlePaste} disabled={isAdding}>
+                        {isAdding ? 'Adding...' : 'Paste'}
+                    </Button>
+                    <Button variant="ghost" onClick={() => document.getElementById('cut-file-input')?.click()} disabled={isAdding}>
+                        {isAdding ? 'Adding...' : 'Choose File'}
                     </Button>
                     <input type="file" id="cut-file-input" accept=".svg,image/png" className="hidden" onChange={handleFileChange} />
                  </div>
@@ -151,7 +170,9 @@ const CutTemplatePanel: React.FC = () => {
                 <div className="flex justify-between items-center mb-2">
                     <h4 className="font-bold">Saved Templates ({templates.length})</h4>
                     <div className="flex items-center gap-2">
-                        <Button variant="ghost" className="!text-xs !px-2 !py-1" onClick={() => document.getElementById('cut-template-import-input')?.click()}>Import</Button>
+                        <Button variant="ghost" className="!text-xs !px-2 !py-1" onClick={() => document.getElementById('cut-template-import-input')?.click()} disabled={isImporting}>
+                            {isImporting ? <><Spinner className="mr-1 !w-3 !h-3" /> Importing...</> : 'Import'}
+                        </Button>
                         <Button variant="ghost" className="!text-xs !px-2 !py-1" onClick={handleExport}>Export All</Button>
                         <input type="file" id="cut-template-import-input" accept=".json" className="hidden" onChange={handleImport} />
                     </div>
@@ -171,7 +192,9 @@ const CutTemplatePanel: React.FC = () => {
                                 <span className="text-xs text-gray-400">{t.svgText ? 'SVG' : 'PNG Mask'}</span>
                                 <div className="flex gap-2 mt-auto pt-2">
                                     <Button variant="ghost" className="!text-xs !px-2 !py-1" onClick={() => handleRename(t)}>Rename</Button>
-                                    <Button variant="warn" className="!text-xs !px-2 !py-1" onClick={() => handleDelete(t)}>Delete</Button>
+                                    <Button variant="warn" className="!text-xs !px-2 !py-1" onClick={() => handleDelete(t)} disabled={deletingId === t.id}>
+                                        {deletingId === t.id ? <Spinner className="!w-3 !h-3" /> : 'Delete'}
+                                    </Button>
                                 </div>
                             </div>
                         ))}

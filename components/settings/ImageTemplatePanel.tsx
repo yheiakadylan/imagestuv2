@@ -5,6 +5,7 @@ import Button from '../common/Button';
 import { fileToBase64, readImagesFromClipboard, uploadDataUrlToStorage, deleteFromCloudinary, downloadJson, readJsonFromFile } from '../../utils/fileUtils';
 import { saveImage } from '../../services/cacheService';
 import CachedImage from '../common/CachedImage';
+import Spinner from '../common/Spinner';
 
 type ImageTemplate = ArtRef | Sample;
 
@@ -16,24 +17,35 @@ interface ImageTemplatePanelProps<T extends ImageTemplate> {
 const ImageTemplatePanel = <T extends ImageTemplate>({ storageKey, title }: ImageTemplatePanelProps<T>) => {
     const { templates, addTemplate, deleteTemplate, updateTemplate } = useTemplates<T>(storageKey);
     const [name, setName] = useState('');
+    const [isAdding, setIsAdding] = useState(false);
+    const [isImporting, setIsImporting] = useState(false);
+    const [deletingId, setDeletingId] = useState<string | null>(null);
 
     const handleAdd = async (dataUrls: string[], baseName: string) => {
         if (!baseName) {
             alert('Please provide a name for the template(s).');
             return;
         }
-        for (let i = 0; i < dataUrls.length; i++) {
-            const dataUrl = dataUrls[i];
-            const storagePath = `${storageKey}/${baseName.replace(/\s/g, '_')}-${Date.now()}-${i}.png`;
-            const { downloadUrl, publicId } = await uploadDataUrlToStorage(dataUrl, storagePath);
-            
-            // Prime the cache
-            saveImage(downloadUrl, dataUrl).catch(err => console.warn('Failed to prime template image cache:', err));
-
-            const templateName = dataUrls.length > 1 ? `${baseName} ${i + 1}` : baseName;
-            await addTemplate({ name: templateName, dataUrl: downloadUrl, publicId } as any);
+        setIsAdding(true);
+        try {
+            for (let i = 0; i < dataUrls.length; i++) {
+                const dataUrl = dataUrls[i];
+                const storagePath = `${storageKey}/${baseName.replace(/\s/g, '_')}-${Date.now()}-${i}.png`;
+                const { downloadUrl, publicId } = await uploadDataUrlToStorage(dataUrl, storagePath);
+                
+                // Prime the cache
+                saveImage(downloadUrl, dataUrl).catch(err => console.warn('Failed to prime template image cache:', err));
+    
+                const templateName = dataUrls.length > 1 ? `${baseName} ${i + 1}` : baseName;
+                await addTemplate({ name: templateName, dataUrl: downloadUrl, publicId } as any);
+            }
+            setName('');
+        } catch(error) {
+            console.error(`Error adding templates to ${storageKey}:`, error);
+            alert(`Failed to add templates: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        } finally {
+            setIsAdding(false);
         }
-        setName('');
     };
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -58,6 +70,7 @@ const ImageTemplatePanel = <T extends ImageTemplate>({ storageKey, title }: Imag
     
     const handleDelete = async (template: T) => {
         if (window.confirm('Are you sure you want to delete this item? This will also delete the image from storage.')) {
+            setDeletingId(template.id);
             try {
                 if (template.publicId) {
                     await deleteFromCloudinary(template.publicId);
@@ -65,6 +78,8 @@ const ImageTemplatePanel = <T extends ImageTemplate>({ storageKey, title }: Imag
                 await deleteTemplate(template.id);
             } catch (error: any) {
                 alert(`Failed to delete template: ${error.message}`);
+            } finally {
+                setDeletingId(null);
             }
         }
     };
@@ -90,6 +105,7 @@ const ImageTemplatePanel = <T extends ImageTemplate>({ storageKey, title }: Imag
         const file = e.target.files?.[0];
         if (!file) return;
 
+        setIsImporting(true);
         try {
             const importedData = await readJsonFromFile<Omit<T, 'id' | 'createdAt'>[]>(file);
             if (!Array.isArray(importedData)) {
@@ -110,6 +126,7 @@ const ImageTemplatePanel = <T extends ImageTemplate>({ storageKey, title }: Imag
             alert(`Import failed: ${error.message}`);
         } finally {
             e.target.value = '';
+            setIsImporting(false);
         }
     };
 
@@ -129,9 +146,11 @@ const ImageTemplatePanel = <T extends ImageTemplate>({ storageKey, title }: Imag
                             className="w-full p-2.5 rounded-lg border border-white/20 bg-black/20 text-gray-200 outline-none"
                         />
                     </div>
-                    <Button variant="ghost" onClick={handlePaste}>Paste from Clipboard</Button>
-                    <Button variant="ghost" onClick={() => document.getElementById(`${storageKey}-file-input`)?.click()}>
-                        Choose File(s)
+                    <Button variant="ghost" onClick={handlePaste} disabled={isAdding}>
+                        {isAdding ? <><Spinner className="mr-2" /> Adding...</> : 'Paste from Clipboard'}
+                    </Button>
+                    <Button variant="ghost" onClick={() => document.getElementById(`${storageKey}-file-input`)?.click()} disabled={isAdding}>
+                        {isAdding ? 'Adding...' : 'Choose File(s)'}
                     </Button>
                     <input type="file" id={`${storageKey}-file-input`} multiple accept="image/*" className="hidden" onChange={handleFileChange} />
                  </div>
@@ -141,7 +160,9 @@ const ImageTemplatePanel = <T extends ImageTemplate>({ storageKey, title }: Imag
                 <div className="flex justify-between items-center mb-2">
                     <h4 className="font-bold">Saved Items ({templates.length})</h4>
                     <div className="flex items-center gap-2">
-                        <Button variant="ghost" className="!text-xs !px-2 !py-1" onClick={() => document.getElementById(`${storageKey}-import-input`)?.click()}>Import</Button>
+                        <Button variant="ghost" className="!text-xs !px-2 !py-1" onClick={() => document.getElementById(`${storageKey}-import-input`)?.click()} disabled={isImporting}>
+                            {isImporting ? <><Spinner className="mr-1 !w-3 !h-3" /> Importing...</> : 'Import'}
+                        </Button>
                         <Button variant="ghost" className="!text-xs !px-2 !py-1" onClick={handleExport}>Export All</Button>
                         <input type="file" id={`${storageKey}-import-input`} accept=".json" className="hidden" onChange={handleImport} />
                     </div>
@@ -156,7 +177,9 @@ const ImageTemplatePanel = <T extends ImageTemplate>({ storageKey, title }: Imag
                                 <p className="font-semibold text-sm truncate" title={template.name}>{template.name}</p>
                                 <div className="flex gap-2 mt-auto pt-2">
                                     <Button variant="ghost" className="!text-xs !px-2 !py-1" onClick={() => handleRename(template)}>Rename</Button>
-                                    <Button variant="warn" className="!text-xs !px-2 !py-1" onClick={() => handleDelete(template)}>Delete</Button>
+                                    <Button variant="warn" className="!text-xs !px-2 !py-1" onClick={() => handleDelete(template)} disabled={deletingId === template.id}>
+                                        {deletingId === template.id ? <Spinner className="!w-3 !h-3" /> : 'Delete'}
+                                    </Button>
                                 </div>
                             </div>
                         ))}
