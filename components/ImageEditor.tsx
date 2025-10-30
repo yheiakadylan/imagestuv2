@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useContext } from 'react';
+import React, { useState, useCallback, useContext, useRef, useEffect } from 'react';
 import { AuthContext } from '../contexts/AuthContext';
 import { useApiKeys } from '../hooks/useApiKeys';
 import * as geminiService from '../services/geminiService';
@@ -40,6 +40,12 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ isOpen, onClose, showStatus, 
     const [prompt, setPrompt] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
+    const [brushSize, setBrushSize] = useState(40);
+    const [maskHistory, setMaskHistory] = useState<ImageData[]>([]);
+
+    const imageRef = useRef<HTMLImageElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const isDrawing = useRef(false);
 
     const auth = useContext(AuthContext);
     const { apiKeys } = useApiKeys(auth.user);
@@ -51,12 +57,130 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ isOpen, onClose, showStatus, 
         setPrompt('');
         setIsLoading(false);
         setIsDragging(false);
+        setMaskHistory([]);
     }, []);
 
     const handleClose = () => {
         resetState();
         onClose();
     };
+    
+    // Setup canvas when source image changes
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        const image = imageRef.current;
+        if (!canvas || !image || !sourceImage) return;
+
+        let animationFrameId: number;
+
+        const resizeCanvas = () => {
+            if (!imageRef.current) return;
+            const { clientWidth, clientHeight, naturalWidth, naturalHeight } = imageRef.current;
+            if (naturalWidth > 0) {
+                canvas.width = naturalWidth;
+                canvas.height = naturalHeight;
+                canvas.style.width = `${clientWidth}px`;
+                canvas.style.height = `${clientHeight}px`;
+                const ctx = canvas.getContext('2d');
+                ctx?.clearRect(0, 0, canvas.width, canvas.height);
+                setMaskHistory([]);
+            }
+        };
+
+        const debouncedResize = () => {
+             cancelAnimationFrame(animationFrameId);
+             animationFrameId = requestAnimationFrame(resizeCanvas);
+        };
+
+        const observer = new ResizeObserver(debouncedResize);
+        observer.observe(image);
+
+        if (image.complete) {
+            resizeCanvas();
+        } else {
+            image.onload = resizeCanvas;
+        }
+
+        return () => {
+            observer.disconnect();
+            cancelAnimationFrame(animationFrameId);
+        };
+    }, [sourceImage]);
+
+
+    const getCoords = (e: React.MouseEvent<HTMLCanvasElement>): {x: number, y: number} | null => {
+        const canvas = canvasRef.current;
+        if (!canvas) return null;
+        const rect = canvas.getBoundingClientRect();
+        return {
+            x: (e.clientX - rect.left) * (canvas.width / rect.width),
+            y: (e.clientY - rect.top) * (canvas.height / rect.height)
+        };
+    };
+
+    const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
+        const ctx = canvasRef.current?.getContext('2d');
+        if (!ctx) return;
+        
+        const imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+        setMaskHistory(prev => [...prev, imageData]);
+
+        isDrawing.current = true;
+        const coords = getCoords(e);
+        if(!coords) return;
+        
+        ctx.beginPath();
+        ctx.moveTo(coords.x, coords.y);
+    };
+
+    const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
+        if (!isDrawing.current) return;
+        const ctx = canvasRef.current?.getContext('2d');
+        const coords = getCoords(e);
+        if (!ctx || !coords) return;
+
+        ctx.strokeStyle = `rgba(255, 255, 255, 0.8)`;
+        ctx.fillStyle = `rgba(255, 255, 255, 0.8)`;
+        ctx.lineWidth = brushSize * (canvasRef.current!.width / canvasRef.current!.clientWidth);
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        ctx.lineTo(coords.x, coords.y);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(coords.x, coords.y, ctx.lineWidth / 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(coords.x, coords.y);
+    };
+    
+    const stopDrawing = () => {
+        const ctx = canvasRef.current?.getContext('2d');
+        if (ctx) ctx.beginPath(); // Reset the path
+        isDrawing.current = false;
+    };
+
+    const handleUndo = () => {
+        if (maskHistory.length === 0) return;
+        const lastState = maskHistory[maskHistory.length - 1];
+        const ctx = canvasRef.current?.getContext('2d');
+        if (ctx) {
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+            ctx.putImageData(lastState, 0, 0);
+        }
+        setMaskHistory(prev => prev.slice(0, -1));
+    };
+
+    const handleClearMask = () => {
+        const canvas = canvasRef.current;
+        const ctx = canvas?.getContext('2d');
+        if (canvas && ctx && maskHistory.length > 0) {
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            setMaskHistory(prev => [...prev, imageData]);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+    };
+
 
     const handleImageUpload = (dataUrl: string) => {
         setSourceImage(dataUrl);
@@ -125,15 +249,43 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ isOpen, onClose, showStatus, 
 
         setIsLoading(true);
         setOutputImage(null);
+        
+        const drawingCanvas = canvasRef.current;
+        const hasMask = drawingCanvas && maskHistory.length > 0;
 
         try {
             const aspectRatio = await getImageAspectRatio(sourceImage);
             
-            const finalPrompt = `Dựa trên hình ảnh được cung cấp, hãy thực hiện chỉnh sửa sau: "${prompt}". Điều cực kỳ quan trọng là phải duy trì phong cách của hình ảnh gốc, bao gồm phông chữ, màu sắc, chất liệu, và bố cục tổng thể. Các thay đổi phải liền mạch và trông tự nhiên.`;
+            if (hasMask) {
+                // Inpainting logic
+                const maskCanvas = document.createElement('canvas');
+                maskCanvas.width = drawingCanvas.width;
+                maskCanvas.height = drawingCanvas.height;
+                const maskCtx = maskCanvas.getContext('2d');
+                if (!maskCtx) throw new Error("Could not create mask canvas context.");
+                
+                // Black background
+                maskCtx.fillStyle = 'black';
+                maskCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
+                
+                // Draw the user's mask in white
+                maskCtx.globalCompositeOperation = 'source-over';
+                maskCtx.drawImage(drawingCanvas, 0, 0);
+                maskCtx.globalCompositeOperation = 'source-in';
+                maskCtx.fillStyle = 'white';
+                maskCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
 
-            const [resultUrl] = await geminiService.generateArtwork(finalPrompt, aspectRatio, [sourceImage], 1, userApiKey);
+                const maskDataUrl = maskCanvas.toDataURL('image/png');
 
-            setOutputImage(resultUrl);
+                const [resultUrl] = await geminiService.generateArtwork(prompt, aspectRatio, [sourceImage], 1, userApiKey, maskDataUrl);
+                setOutputImage(resultUrl);
+
+            } else {
+                // Whole image editing logic
+                const finalPrompt = `Dựa trên hình ảnh được cung cấp, hãy thực hiện chỉnh sửa sau: "${prompt}". Điều cực kỳ quan trọng là phải duy trì phong cách của hình ảnh gốc, bao gồm phông chữ, màu sắc, chất liệu, và bố cục tổng thể. Các thay đổi phải liền mạch và trông tự nhiên.`;
+                const [resultUrl] = await geminiService.generateArtwork(finalPrompt, aspectRatio, [sourceImage], 1, userApiKey);
+                setOutputImage(resultUrl);
+            }
             showStatus('Image edited successfully!', 'ok');
         } catch (error: any) {
             console.error('Image editing failed:', error);
@@ -179,10 +331,19 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ isOpen, onClose, showStatus, 
                         >
                             {sourceImage ? (
                                 <>
-                                    <img src={sourceImage} alt="Source" className="max-w-full max-h-full object-contain rounded-md p-1" />
-                                    <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4 rounded-xl">
-                                        <Button variant="ghost" onClick={handleAddFromFile}>Change Image</Button>
-                                        <Button variant="warn" onClick={handleRemoveImage}>Remove</Button>
+                                    <img ref={imageRef} src={sourceImage} alt="Source" className="max-w-full max-h-full object-contain rounded-md p-1" />
+                                     <canvas 
+                                        ref={canvasRef}
+                                        onMouseDown={startDrawing}
+                                        onMouseMove={draw}
+                                        onMouseUp={stopDrawing}
+                                        onMouseLeave={stopDrawing}
+                                        className="absolute top-0 left-0 cursor-crosshair opacity-70"
+                                        style={{ touchAction: 'none' }}
+                                    />
+                                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-2">
+                                        <Button variant="ghost" className="!text-xs !px-2 !py-1" onClick={handleAddFromFile}>Change</Button>
+                                        <Button variant="warn" className="!text-xs !px-2 !py-1" onClick={handleRemoveImage}>Remove</Button>
                                     </div>
                                 </>
                             ) : (
@@ -197,11 +358,25 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ isOpen, onClose, showStatus, 
                                 </div>
                             )}
                         </div>
+                        
+                        {sourceImage && (
+                            <div className="flex-shrink-0 flex items-center gap-4 p-2 bg-black/20 rounded-lg">
+                                <label className="text-sm text-gray-400">Brush:</label>
+                                <input 
+                                    type="range" min="10" max="150" value={brushSize}
+                                    onChange={e => setBrushSize(Number(e.target.value))}
+                                    className="flex-1 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer" 
+                                    disabled={isLoading}
+                                />
+                                <Button variant="ghost" onClick={handleUndo} disabled={isLoading || maskHistory.length === 0} className="!text-xs !px-2 !py-1">Undo</Button>
+                                <Button variant="ghost" onClick={handleClearMask} disabled={isLoading || maskHistory.length === 0} className="!text-xs !px-2 !py-1">Clear</Button>
+                            </div>
+                        )}
 
                         <div className="flex-shrink-0">
                             <h3 className="text-lg font-bold text-gray-200 mb-2">2. Edit Instruction</h3>
                             <TextArea
-                                placeholder="e.g., Change the date to 'Dec 25, 2024'"
+                                placeholder={maskHistory.length > 0 ? "Describe what to draw in the masked area..." : "e.g., Change the date to 'Dec 25, 2024'"}
                                 value={prompt}
                                 onChange={(e) => setPrompt(e.target.value)}
                                 className="h-28"

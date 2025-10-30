@@ -3,6 +3,8 @@ import { EXPAND_PROMPT_DEFAULT } from "../constants";
 
 const MODEL_ID = 'gemini-2.5-flash-image';
 const VIETNAMESE_EXPAND_PROMPT = "Mở rộng khung hình ảnh ra ngoài, giữ nguyên phần nền hiện có. Việc mở rộng phải liền mạch, tiếp tục phong cách hình ảnh và nội dung của phần nền hiện tại để tạo thêm không gian xung quanh";
+const VIETNAMESE_INPAINT_PROMPT = `Sử dụng hình ảnh thứ hai làm mặt nạ (mask). Vùng trắng trên mặt nạ chỉ ra khu vực cần chỉnh sửa trên ảnh gốc (ảnh đầu tiên). Trong khu vực được chỉ định bởi mặt nạ, hãy vẽ: "{USER_PROMPT}". Giữ nguyên phần còn lại của hình ảnh gốc không thay đổi.`;
+
 
 const createAiClient = (apiKey: string) => {
   if (!apiKey) throw new Error("Missing Google AI API key");
@@ -35,7 +37,7 @@ const extractBase64FromResponse = (resp: GenerateContentResponse): string => {
 
 /**
  * Generates artwork from a text prompt, optionally conditioned by reference images.
- * Also used for expanding images.
+ * Also used for expanding images and inpainting with a mask.
  */
 export const generateArtwork = async (
     prompt: string,
@@ -43,6 +45,7 @@ export const generateArtwork = async (
     refUrls: string[] = [],
     count: number,
     apiKey: string,
+    maskUrl?: string,
 ): Promise<string[]> => {
     const ai = createAiClient(apiKey);
     const results: string[] = [];
@@ -51,21 +54,31 @@ export const generateArtwork = async (
     for (let i = 0; i < count; i++) {
         const parts: Part[] = [];
         
-        if (refUrls.length > 0) {
-            parts.push(...refUrls.map(dataUrlToPart));
-        }
-        
-        let textPrompt = prompt;
-        // Use the specific Vietnamese prompt for expansion requests
-        if (prompt === EXPAND_PROMPT_DEFAULT) {
-            textPrompt = VIETNAMESE_EXPAND_PROMPT;
-        }
+        // Inpainting logic
+        if (maskUrl && refUrls.length > 0) {
+            const sourceImageUrl = refUrls[0];
+            parts.push(dataUrlToPart(sourceImageUrl));
+            parts.push(dataUrlToPart(maskUrl));
+            
+            const inpaintPrompt = VIETNAMESE_INPAINT_PROMPT.replace('{USER_PROMPT}', prompt);
+            parts.push({ text: inpaintPrompt });
+        } else { // Existing logic for generation/expansion/editing
+            if (refUrls.length > 0) {
+                parts.push(...refUrls.map(dataUrlToPart));
+            }
+            
+            let textPrompt = prompt;
+            // Use the specific Vietnamese prompt for expansion requests
+            if (prompt === EXPAND_PROMPT_DEFAULT) {
+                textPrompt = VIETNAMESE_EXPAND_PROMPT;
+            }
 
-        const baseGuard = refUrls.length > 0
-            ? "Use the provided image(s) as reference(s)."
-            : "Generate a clean, high-resolution, print-ready artwork. No borders, no watermark, centered composition.";
+            const baseGuard = refUrls.length > 0
+                ? "Use the provided image(s) as reference(s)."
+                : "Generate a clean, high-resolution, print-ready artwork. No borders, no watermark, centered composition.";
 
-        parts.push({ text: `${baseGuard} ${textPrompt}\nThe final output image MUST have an aspect ratio of ${aspectRatio}.` });
+            parts.push({ text: `${baseGuard} ${textPrompt}\nThe final output image MUST have an aspect ratio of ${aspectRatio}.` });
+        }
 
         // FIX: Corrected responseModalities to only include IMAGE and removed unsupported imageConfig for gemini-2.5-flash-image model.
         const response = await ai.models.generateContent({
