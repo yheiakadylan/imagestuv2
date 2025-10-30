@@ -42,6 +42,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ isOpen, onClose, showStatus, 
     const [isDragging, setIsDragging] = useState(false);
     const [brushSize, setBrushSize] = useState(40);
     const [maskHistory, setMaskHistory] = useState<ImageData[]>([]);
+    const [activeMobileTab, setActiveMobileTab] = useState<'source' | 'result'>('source');
 
     const imageRef = useRef<HTMLImageElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -58,6 +59,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ isOpen, onClose, showStatus, 
         setIsLoading(false);
         setIsDragging(false);
         setMaskHistory([]);
+        setActiveMobileTab('source');
     }, []);
 
     const handleClose = () => {
@@ -185,6 +187,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ isOpen, onClose, showStatus, 
     const handleImageUpload = (dataUrl: string) => {
         setSourceImage(dataUrl);
         setOutputImage(null); // Clear previous output when new source is set
+        setActiveMobileTab('source');
     };
 
     const handleAddFromFile = async () => {
@@ -287,7 +290,9 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ isOpen, onClose, showStatus, 
                 setOutputImage(resultUrl);
             }
             showStatus('Image edited successfully!', 'ok');
-        } catch (error: any) {
+            setActiveMobileTab('result'); // Switch to result tab on mobile
+        } catch (error: any)
+            {
             console.error('Image editing failed:', error);
             showStatus(error.message || 'Image editing failed.', 'err');
         } finally {
@@ -303,6 +308,111 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ isOpen, onClose, showStatus, 
 
     if (!isOpen) return null;
 
+    const SourcePanel = (
+        <div className="bg-white/5 border border-white/10 rounded-xl p-3 flex flex-col gap-3 h-full overflow-y-auto">
+            <h3 className="text-lg font-bold text-gray-200 flex-shrink-0">1. Source Image</h3>
+            
+            <div 
+                onDragEnter={(e) => handleDragEvent(e, true)}
+                onDragOver={(e) => handleDragEvent(e, true)}
+                onDragLeave={(e) => handleDragEvent(e, false)}
+                onDrop={handleDrop}
+                className={`relative group flex-1 min-h-[180px] md:min-h-[300px] border-2 border-dashed rounded-xl flex items-center justify-center transition-all duration-300 ${isDragging ? 'border-blue-500 bg-blue-500/10 scale-105' : 'border-white/20'}`}
+            >
+                {sourceImage ? (
+                    <>
+                        <img ref={imageRef} src={sourceImage} alt="Source" className="max-w-full max-h-full object-contain rounded-md p-1" />
+                         <canvas 
+                            ref={canvasRef}
+                            onMouseDown={startDrawing}
+                            onMouseMove={draw}
+                            onMouseUp={stopDrawing}
+                            onMouseLeave={stopDrawing}
+                            className="absolute top-0 left-0 cursor-crosshair opacity-70"
+                            style={{ touchAction: 'none' }}
+                        />
+                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-2">
+                            <Button variant="ghost" className="!text-xs !px-2 !py-1" onClick={handleAddFromFile}>Change</Button>
+                            <Button variant="warn" className="!text-xs !px-2 !py-1" onClick={handleRemoveImage}>Remove</Button>
+                        </div>
+                    </>
+                ) : (
+                    <div className="text-center text-gray-400 p-4 flex flex-col items-center">
+                        <UploadIcon />
+                        <p className="font-bold text-lg text-gray-300">{isDragging ? 'Drop to Upload!' : 'Upload an Image'}</p>
+                        <p className="text-sm">Drag & drop, paste, or browse your files.</p>
+                        <div className="flex items-center gap-3 mt-4">
+                            <Button variant="ghost" onClick={handleAddFromFile}>Browse</Button>
+                            <Button variant="ghost" onClick={handlePaste}>Paste</Button>
+                        </div>
+                    </div>
+                )}
+            </div>
+            
+            {sourceImage && (
+                <div className="flex-shrink-0 flex items-center gap-4 p-2 bg-black/20 rounded-lg">
+                    <label className="text-sm text-gray-400">Brush:</label>
+                    <input 
+                        type="range" min="10" max="150" value={brushSize}
+                        onChange={e => setBrushSize(Number(e.target.value))}
+                        className="flex-1 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer" 
+                        disabled={isLoading}
+                    />
+                    <Button variant="ghost" onClick={handleUndo} disabled={isLoading || maskHistory.length === 0} className="!text-xs !px-2 !py-1">Undo</Button>
+                    <Button variant="ghost" onClick={handleClearMask} disabled={isLoading || maskHistory.length === 0} className="!text-xs !px-2 !py-1">Clear</Button>
+                </div>
+            )}
+
+            <div className="flex-shrink-0">
+                <h3 className="text-lg font-bold text-gray-200 mb-2">2. Edit Instruction</h3>
+                <TextArea
+                    placeholder={maskHistory.length > 0 ? "Describe what to draw in the masked area..." : "e.g., Change the date to 'Dec 25, 2024'"}
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    className="h-24"
+                    disabled={!sourceImage || isLoading}
+                />
+            </div>
+
+            <div className="mt-auto flex-shrink-0 hidden md:block">
+                <Button 
+                    onClick={handleGenerate} 
+                    disabled={isLoading || !sourceImage || !prompt.trim()}
+                    className="w-full text-base py-3"
+                >
+                    {isLoading ? <><Spinner className="mr-2" /> Generating...</> : '✨ Generate Edit'}
+                </Button>
+            </div>
+        </div>
+    );
+
+    const ResultPanel = (
+         <div className="bg-white/5 border border-white/10 rounded-xl p-4 flex flex-col items-center justify-center h-full">
+            <div className="relative group w-full h-full rounded-lg bg-[repeating-conic-gradient(#1a1a2e_0%_25%,#2a2a44_0%_50%)] bg-[0_0/20px_20px] flex items-center justify-center overflow-hidden">
+               {isLoading ? (
+                   <div className="text-center text-gray-300 flex flex-col items-center animate-fade-in">
+                       <Spinner className="w-10 h-10" />
+                       <p className="mt-4 text-lg font-semibold">The AI is working its magic...</p>
+                       <p className="text-sm text-gray-400">This may take a moment.</p>
+                   </div>
+               ) : outputImage ? (
+                    <>
+                        <img src={outputImage} alt="Output" className="max-w-full max-h-full object-contain rounded-md animate-fade-in" />
+                        <div className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity hidden md:block">
+                            <Button variant="primary" onClick={handleDownloadOutput}>Download</Button>
+                        </div>
+                    </>
+               ) : (
+                    <div className="text-center text-gray-400 flex flex-col items-center">
+                        <MagicWandIcon />
+                        <p className="font-bold text-lg text-gray-300">Edited Image</p>
+                        <p className="text-sm">Your result will appear here.</p>
+                    </div>
+               )}
+            </div>
+        </div>
+    );
+
     return (
         <div
             className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] backdrop-blur-lg animate-fade-in"
@@ -317,110 +427,54 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ isOpen, onClose, showStatus, 
                     <Button variant="ghost" onClick={handleClose} className="!px-3 !py-1 text-xl">✕</Button>
                 </header>
 
-                <main className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-6 p-6 min-h-0">
-                    {/* ===== INPUT COLUMN ===== */}
-                    <div className="bg-white/5 border border-white/10 rounded-xl p-4 flex flex-col gap-4">
-                        <h3 className="text-lg font-bold text-gray-200 flex-shrink-0">1. Source Image</h3>
-                        
-                        <div 
-                            onDragEnter={(e) => handleDragEvent(e, true)}
-                            onDragOver={(e) => handleDragEvent(e, true)}
-                            onDragLeave={(e) => handleDragEvent(e, false)}
-                            onDrop={handleDrop}
-                            className={`relative group flex-1 min-h-[300px] border-2 border-dashed rounded-xl flex items-center justify-center transition-all duration-300 ${isDragging ? 'border-blue-500 bg-blue-500/10 scale-105' : 'border-white/20'}`}
+                {/* ===== DESKTOP LAYOUT ===== */}
+                <main className="hidden md:grid flex-1 md:grid-cols-2 gap-6 p-6 min-h-0">
+                    {SourcePanel}
+                    {ResultPanel}
+                </main>
+
+                {/* ===== MOBILE LAYOUT ===== */}
+                <main className="flex md:hidden flex-col flex-1 p-4 gap-4 min-h-0">
+                    {/* Mobile Tabs */}
+                    <div className="flex-shrink-0 flex items-center gap-2 p-1 bg-black/20 rounded-lg">
+                        <button 
+                            onClick={() => setActiveMobileTab('source')}
+                            className={`flex-1 p-2 rounded-md text-sm font-bold transition-colors ${activeMobileTab === 'source' ? 'bg-blue-500/30 text-white' : 'text-gray-400'}`}
                         >
-                            {sourceImage ? (
-                                <>
-                                    <img ref={imageRef} src={sourceImage} alt="Source" className="max-w-full max-h-full object-contain rounded-md p-1" />
-                                     <canvas 
-                                        ref={canvasRef}
-                                        onMouseDown={startDrawing}
-                                        onMouseMove={draw}
-                                        onMouseUp={stopDrawing}
-                                        onMouseLeave={stopDrawing}
-                                        className="absolute top-0 left-0 cursor-crosshair opacity-70"
-                                        style={{ touchAction: 'none' }}
-                                    />
-                                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-2">
-                                        <Button variant="ghost" className="!text-xs !px-2 !py-1" onClick={handleAddFromFile}>Change</Button>
-                                        <Button variant="warn" className="!text-xs !px-2 !py-1" onClick={handleRemoveImage}>Remove</Button>
-                                    </div>
-                                </>
-                            ) : (
-                                <div className="text-center text-gray-400 p-4 flex flex-col items-center">
-                                    <UploadIcon />
-                                    <p className="font-bold text-lg text-gray-300">{isDragging ? 'Drop to Upload!' : 'Upload an Image'}</p>
-                                    <p className="text-sm">Drag & drop, paste, or browse your files.</p>
-                                    <div className="flex items-center gap-3 mt-4">
-                                        <Button variant="ghost" onClick={handleAddFromFile}>Browse</Button>
-                                        <Button variant="ghost" onClick={handlePaste}>Paste</Button>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                        
-                        {sourceImage && (
-                            <div className="flex-shrink-0 flex items-center gap-4 p-2 bg-black/20 rounded-lg">
-                                <label className="text-sm text-gray-400">Brush:</label>
-                                <input 
-                                    type="range" min="10" max="150" value={brushSize}
-                                    onChange={e => setBrushSize(Number(e.target.value))}
-                                    className="flex-1 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer" 
-                                    disabled={isLoading}
-                                />
-                                <Button variant="ghost" onClick={handleUndo} disabled={isLoading || maskHistory.length === 0} className="!text-xs !px-2 !py-1">Undo</Button>
-                                <Button variant="ghost" onClick={handleClearMask} disabled={isLoading || maskHistory.length === 0} className="!text-xs !px-2 !py-1">Clear</Button>
-                            </div>
-                        )}
-
-                        <div className="flex-shrink-0">
-                            <h3 className="text-lg font-bold text-gray-200 mb-2">2. Edit Instruction</h3>
-                            <TextArea
-                                placeholder={maskHistory.length > 0 ? "Describe what to draw in the masked area..." : "e.g., Change the date to 'Dec 25, 2024'"}
-                                value={prompt}
-                                onChange={(e) => setPrompt(e.target.value)}
-                                className="h-28"
-                                disabled={!sourceImage || isLoading}
-                            />
-                        </div>
-
-                        <div className="mt-auto flex-shrink-0">
-                            <Button 
-                                onClick={handleGenerate} 
-                                disabled={isLoading || !sourceImage || !prompt.trim()}
-                                className="w-full text-base py-3"
-                            >
-                                {isLoading ? <><Spinner className="mr-2" /> Generating...</> : '✨ Generate Edit'}
-                            </Button>
-                        </div>
+                            Source
+                        </button>
+                        <button 
+                            onClick={() => setActiveMobileTab('result')}
+                            className={`flex-1 p-2 rounded-md text-sm font-bold transition-colors ${activeMobileTab === 'result' ? 'bg-blue-500/30 text-white' : 'text-gray-400'}`}
+                        >
+                            Result
+                        </button>
                     </div>
 
-                    {/* ===== OUTPUT COLUMN ===== */}
-                    <div className="bg-white/5 border border-white/10 rounded-xl p-4 flex flex-col items-center justify-center">
-                        <div className="relative group w-full h-full rounded-lg bg-[repeating-conic-gradient(#1a1a2e_0%_25%,#2a2a44_0%_50%)] bg-[0_0/20px_20px] flex items-center justify-center overflow-hidden">
-                           {isLoading ? (
-                               <div className="text-center text-gray-300 flex flex-col items-center animate-fade-in">
-                                   <Spinner className="w-10 h-10" />
-                                   <p className="mt-4 text-lg font-semibold">The AI is working its magic...</p>
-                                   <p className="text-sm text-gray-400">This may take a moment.</p>
-                               </div>
-                           ) : outputImage ? (
-                                <>
-                                    <img src={outputImage} alt="Output" className="max-w-full max-h-full object-contain rounded-md animate-fade-in" />
-                                    <div className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <Button variant="primary" onClick={handleDownloadOutput}>Download</Button>
-                                    </div>
-                                </>
-                           ) : (
-                                <div className="text-center text-gray-400 flex flex-col items-center">
-                                    <MagicWandIcon />
-                                    <p className="font-bold text-lg text-gray-300">Edited Image</p>
-                                    <p className="text-sm">Your result will appear here.</p>
-                                </div>
-                           )}
-                        </div>
+                    {/* Mobile Content */}
+                    <div className="flex-1 min-h-0 pb-16">
+                         {activeMobileTab === 'source' && SourcePanel}
+                         {activeMobileTab === 'result' && ResultPanel}
                     </div>
                 </main>
+
+                 {/* ===== MOBILE FOOTER ACTIONS ===== */}
+                <footer className="md:hidden fixed bottom-0 left-0 right-0 bg-[#0d0c1c]/90 border-t border-white/10 backdrop-blur-sm p-3 z-10">
+                     {activeMobileTab === 'source' ? (
+                        <Button 
+                            onClick={handleGenerate} 
+                            disabled={isLoading || !sourceImage || !prompt.trim()}
+                            className="w-full text-base py-3"
+                        >
+                            {isLoading ? <><Spinner className="mr-2" /> Generating...</> : '✨ Generate Edit'}
+                        </Button>
+                     ) : (
+                        <div className="grid grid-cols-2 gap-3">
+                            <Button variant="ghost" onClick={() => setActiveMobileTab('source')}>New Edit</Button>
+                            <Button variant="primary" onClick={handleDownloadOutput} disabled={!outputImage}>Download</Button>
+                        </div>
+                     )}
+                </footer>
             </div>
             <style>
                 {`

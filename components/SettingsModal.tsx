@@ -24,6 +24,13 @@ const ALL_TABS: { id: Tab, label: string, adminOnly: boolean }[] = [
     { id: 'cuts', label: 'Cut Templates', adminOnly: false },
 ];
 
+const ChevronDownIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+    </svg>
+);
+
+
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     const auth = useContext(AuthContext);
 
@@ -34,6 +41,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     }, [auth.user?.role]);
     
     const [activeTab, setActiveTab] = useState<Tab>(availableTabs[0]?.id || 'api');
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
     // Effect to reset tab if it becomes unavailable
     React.useEffect(() => {
@@ -55,6 +63,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             default: return null;
         }
     }
+    
+    const activeTabLabel = availableTabs.find(t => t.id === activeTab)?.label || 'Settings';
 
     return (
         <div 
@@ -70,7 +80,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                     <Button variant="ghost" onClick={onClose} className="!px-3 !py-1">✕</Button>
                 </header>
 
-                <div className="flex-1 flex min-h-0">
+                {/* --- DESKTOP LAYOUT --- */}
+                <div className="hidden md:flex flex-1 min-h-0">
                     <aside className="w-1/4 p-4 border-r border-white/10 flex flex-col gap-2">
                         {availableTabs.map(tab => (
                              <button
@@ -88,6 +99,44 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                         {renderContent()}
                     </main>
                 </div>
+
+                {/* --- MOBILE LAYOUT --- */}
+                <div className="flex flex-col md:hidden flex-1 min-h-0 p-4 gap-4">
+                     {/* Mobile Tab Selector Dropdown */}
+                    <div className="relative flex-shrink-0">
+                        <button
+                            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                            className="w-full flex items-center justify-between p-3 rounded-lg bg-white/10 border border-white/20 text-white"
+                            aria-haspopup="true"
+                            aria-expanded={isMobileMenuOpen}
+                        >
+                            <span>{activeTabLabel}</span>
+                            <ChevronDownIcon />
+                        </button>
+                        {isMobileMenuOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-white/20 rounded-lg z-10 p-2 shadow-2xl">
+                                {availableTabs.map(tab => (
+                                    <button
+                                        key={tab.id}
+                                        onClick={() => {
+                                            setActiveTab(tab.id);
+                                            setIsMobileMenuOpen(false);
+                                        }}
+                                        className={`w-full text-left p-2 rounded-md transition-colors ${activeTab === tab.id ? 'bg-blue-500/30 font-semibold' : 'hover:bg-white/10'}`}
+                                        role="menuitem"
+                                    >
+                                        {tab.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    {/* Mobile Content Area */}
+                    <main className="flex-1 overflow-y-auto">
+                        {renderContent()}
+                    </main>
+                </div>
+
             </div>
              <style>
                 {`

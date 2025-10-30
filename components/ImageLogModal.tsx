@@ -25,7 +25,7 @@ const ImageLogModal: React.FC<ImageLogModalProps> = ({ isOpen, onClose, results,
     useEffect(() => {
         if (isOpen) {
             setSelectedIds(new Set());
-            setLastSelectedId(null); // Reset last selected on filter change or open
+            setLastSelectedId(null); 
         }
     }, [selectedUserId, isOpen]);
 
@@ -36,12 +36,16 @@ const ImageLogModal: React.FC<ImageLogModalProps> = ({ isOpen, onClose, results,
         return results;
     }, [results, user, selectedUserId]);
 
+    const allSelected = useMemo(() => 
+        filteredResults.length > 0 && selectedIds.size === filteredResults.length,
+        [selectedIds.size, filteredResults.length]
+    );
+
     if (!isOpen) return null;
 
     const handleToggleSelect = (id: string, event: MouseEvent<HTMLDivElement>) => {
         const newSelectedIds = new Set(selectedIds);
 
-        // Handle Shift-click for range selection
         if (event.shiftKey && lastSelectedId) {
             const lastIndex = filteredResults.findIndex(r => r.id === lastSelectedId);
             const currentIndex = filteredResults.findIndex(r => r.id === id);
@@ -53,24 +57,16 @@ const ImageLogModal: React.FC<ImageLogModalProps> = ({ isOpen, onClose, results,
                     newSelectedIds.add(filteredResults[i].id);
                 }
             } else {
-                 // Fallback to single toggle if one of the items is not found
-                if (newSelectedIds.has(id)) {
-                    newSelectedIds.delete(id);
-                } else {
-                    newSelectedIds.add(id);
-                }
+                if (newSelectedIds.has(id)) newSelectedIds.delete(id);
+                else newSelectedIds.add(id);
             }
         } else {
-            // Normal toggle
-            if (newSelectedIds.has(id)) {
-                newSelectedIds.delete(id);
-            } else {
-                newSelectedIds.add(id);
-            }
+            if (newSelectedIds.has(id)) newSelectedIds.delete(id);
+            else newSelectedIds.add(id);
         }
         
         setSelectedIds(newSelectedIds);
-        setLastSelectedId(id); // Set current as the last selected for the next shift-click
+        setLastSelectedId(id);
     };
 
     const handleDeleteSelected = async () => {
@@ -99,13 +95,14 @@ const ImageLogModal: React.FC<ImageLogModalProps> = ({ isOpen, onClose, results,
         });
     };
 
-    const handleSelectAll = () => {
-        setSelectedIds(new Set(filteredResults.map(r => r.id)));
+    const handleToggleSelectAll = () => {
+        if (allSelected) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(filteredResults.map(r => r.id)));
+        }
     };
 
-    const handleDeselectAll = () => {
-        setSelectedIds(new Set());
-    };
 
     return (
         <div 
@@ -118,9 +115,9 @@ const ImageLogModal: React.FC<ImageLogModalProps> = ({ isOpen, onClose, results,
             >
                 <header className="flex-shrink-0 flex items-center justify-between p-4 border-b border-white/10 flex-wrap gap-y-2">
                     <div className="flex items-center gap-4">
-                        <h2 className="text-2xl font-bold">Image Generation Log</h2>
+                        <h2 className="text-2xl font-bold">Image Log</h2>
                         {user?.role === 'admin' && (
-                             <div className="flex items-center gap-2">
+                             <div className="items-center gap-2 hidden md:flex">
                                 <label htmlFor="user-filter" className="text-sm text-gray-400 flex-shrink-0">Filter:</label>
                                 <Select
                                     id="user-filter"
@@ -136,12 +133,10 @@ const ImageLogModal: React.FC<ImageLogModalProps> = ({ isOpen, onClose, results,
                             </div>
                         )}
                     </div>
-                    <div className="flex items-center gap-3 flex-wrap">
-                        <Button variant="ghost" onClick={handleSelectAll} disabled={filteredResults.length === 0}>
-                            Select All
-                        </Button>
-                        <Button variant="ghost" onClick={handleDeselectAll} disabled={selectedIds.size === 0}>
-                            Deselect All
+                     {/* --- DESKTOP ACTIONS --- */}
+                    <div className="hidden md:flex items-center gap-3 flex-wrap">
+                        <Button variant="ghost" onClick={handleToggleSelectAll} disabled={filteredResults.length === 0}>
+                            {allSelected ? 'Deselect All' : 'Select All'}
                         </Button>
                         <Button variant="ghost" onClick={handleDownloadSelected} disabled={selectedIds.size === 0}>
                             Download ({selectedIds.size})
@@ -151,9 +146,35 @@ const ImageLogModal: React.FC<ImageLogModalProps> = ({ isOpen, onClose, results,
                         </Button>
                         <Button variant="ghost" onClick={onClose} className="!px-3 !py-1">✕</Button>
                     </div>
+                    {/* --- MOBILE ACTIONS --- */}
+                     <div className="flex md:hidden items-center gap-3">
+                        <Button variant="ghost" onClick={handleToggleSelectAll} disabled={filteredResults.length === 0}>
+                            {allSelected ? 'Deselect All' : 'Select All'}
+                        </Button>
+                        <Button variant="ghost" onClick={onClose} className="!px-3 !py-1">✕</Button>
+                    </div>
                 </header>
+                
+                 {/* Admin Filter on Mobile */}
+                {user?.role === 'admin' && (
+                     <div className="flex md:hidden items-center gap-2 p-4 pt-2 border-b border-white/10">
+                        <label htmlFor="user-filter-mobile" className="text-sm text-gray-400 flex-shrink-0">Filter:</label>
+                        <Select
+                            id="user-filter-mobile"
+                            value={selectedUserId}
+                            onChange={(e) => setSelectedUserId(e.target.value)}
+                            className="!py-1.5 !px-3 text-sm flex-1"
+                        >
+                            <option value="all">All Users</option>
+                            {allUsers.map(u => (
+                                <option key={u.id} value={u.id}>{u.username}</option>
+                            ))}
+                        </Select>
+                    </div>
+                )}
 
-                <main className="flex-1 overflow-y-auto p-4">
+
+                <main className="flex-1 overflow-y-auto p-4 md:pb-4 pb-24">
                     {filteredResults.length === 0 ? (
                         <p className="text-gray-400 text-center py-8">No images have been generated for the selected filter.</p>
                     ) : (
@@ -182,12 +203,25 @@ const ImageLogModal: React.FC<ImageLogModalProps> = ({ isOpen, onClose, results,
                         </div>
                     )}
                 </main>
+
+                {/* --- MOBILE FOOTER ACTIONS --- */}
+                {selectedIds.size > 0 && (
+                     <footer className="md:hidden fixed bottom-0 left-0 right-0 bg-[#0d0c1c]/90 border-t border-white/10 backdrop-blur-sm p-3 z-10 flex items-center justify-between animate-fade-in">
+                        <span className="font-semibold">{selectedIds.size} selected</span>
+                        <div className="flex items-center gap-3">
+                            <Button variant="ghost" onClick={handleDownloadSelected}>Download</Button>
+                            <Button variant="warn" onClick={handleDeleteSelected} disabled={isDeleting}>
+                                {isDeleting ? <Spinner /> : 'Delete'}
+                            </Button>
+                        </div>
+                    </footer>
+                )}
             </div>
              <style>
                 {`
                 @keyframes fade-in {
-                    from { opacity: 0; }
-                    to { opacity: 1; }
+                    from { opacity: 0; transform: translateY(10px); }
+                    to { opacity: 1; transform: translateY(0); }
                 }
                 .animate-fade-in { animation: fade-in 0.2s ease-out; }
                 `}

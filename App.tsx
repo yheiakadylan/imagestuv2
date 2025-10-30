@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useContext } from 'react';
 import { ExpandedNode, User, LogEntry, MockupPrompt, ArtRef, Sample, CutTemplate, Status } from './types';
 import ArtColumn from './components/ArtColumn';
@@ -293,7 +294,7 @@ const App: React.FC = () => {
                 user={auth.user}
             />
             
-            <main className="flex-1 md:grid md:grid-cols-3 gap-3 p-3 min-h-0 pb-16 md:pb-3">
+            <main className="flex-1 md:grid md:grid-cols-3 md:grid-rows-1 gap-3 p-3 min-h-0 pb-16 md:pb-3">
                 <div className={`md:block h-full ${activeTab === 'art' ? 'block' : 'hidden'}`}>
                     <ArtColumn
                         artwork={artwork}

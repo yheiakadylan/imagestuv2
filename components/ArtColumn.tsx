@@ -30,8 +30,8 @@ interface ArtColumnProps {
     isUpscaled: boolean;
 }
 
-const ChevronIcon = ({ isOpen }: { isOpen: boolean }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+const ChevronIcon = ({ isOpen, className }: { isOpen: boolean; className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''} ${className || ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
     </svg>
 );
@@ -244,12 +244,12 @@ const ArtColumn: React.FC<ArtColumnProps> = ({
             
             <div className="mt-2">
                 {/* Generate Artwork Accordion */}
-                <div className="border-t border-white/10">
-                    <button onClick={() => toggleSection('generate')} className="w-full flex justify-between items-center py-3 text-base font-bold">
+                <div className="border-t border-white/10 md:pt-3">
+                    <button onClick={() => toggleSection('generate')} className="w-full flex justify-between items-center py-3 text-base font-bold md:mb-2 md:py-0 md:pointer-events-none">
                         <span>Generate Artwork</span>
-                        <ChevronIcon isOpen={openSections.has('generate')} />
+                        <ChevronIcon isOpen={openSections.has('generate')} className="md:hidden" />
                     </button>
-                    <div className={`grid transition-all duration-300 ease-in-out ${openSections.has('generate') ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
+                    <div className={`grid transition-all duration-300 ease-in-out md:grid-rows-[1fr] md:opacity-100 ${openSections.has('generate') ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
                         <div className="overflow-hidden">
                             <div className="pb-2">
                                 <div className="grid grid-cols-2 gap-4 mb-2">
@@ -283,12 +283,12 @@ const ArtColumn: React.FC<ArtColumnProps> = ({
                 </div>
 
                 {/* Artwork References Accordion */}
-                 <div className="border-t border-white/10">
-                    <button onClick={() => toggleSection('references')} className="w-full flex justify-between items-center py-3 text-base font-bold">
+                 <div className="border-t border-white/10 md:pt-3">
+                    <button onClick={() => toggleSection('references')} className="w-full flex justify-between items-center py-3 text-base font-bold md:mb-2 md:py-0 md:pointer-events-none">
                         <span>Artwork References</span>
-                        <ChevronIcon isOpen={openSections.has('references')} />
+                        <ChevronIcon isOpen={openSections.has('references')} className="md:hidden" />
                     </button>
-                     <div className={`grid transition-all duration-300 ease-in-out ${openSections.has('references') ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
+                     <div className={`grid transition-all duration-300 ease-in-out md:grid-rows-[1fr] md:opacity-100 ${openSections.has('references') ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
                         <div className="overflow-hidden">
                              <div 
                                 onDragEnter={(e) => handleDragEvent(e, true, setIsDraggingArt)}
@@ -316,12 +316,12 @@ const ArtColumn: React.FC<ArtColumnProps> = ({
                 </div>
 
                 {/* Product Samples Accordion */}
-                <div className="border-t border-white/10">
-                    <button onClick={() => toggleSection('samples')} className="w-full flex justify-between items-center py-3 text-base font-bold">
+                <div className="border-t border-white/10 md:pt-3">
+                    <button onClick={() => toggleSection('samples')} className="w-full flex justify-between items-center py-3 text-base font-bold md:mb-2 md:py-0 md:pointer-events-none">
                         <span>Product Samples</span>
-                        <ChevronIcon isOpen={openSections.has('samples')} />
+                        <ChevronIcon isOpen={openSections.has('samples')} className="md:hidden" />
                     </button>
-                    <div className={`grid transition-all duration-300 ease-in-out ${openSections.has('samples') ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
+                    <div className={`grid transition-all duration-300 ease-in-out md:grid-rows-[1fr] md:opacity-100 ${openSections.has('samples') ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
                         <div className="overflow-hidden">
                              <div
                                 onDragEnter={(e) => handleDragEvent(e, true, setIsDraggingSample)}
