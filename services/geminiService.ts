@@ -67,12 +67,12 @@ export const generateArtwork = async (
 
         parts.push({ text: `${baseGuard} ${textPrompt}\nThe final output image MUST have an aspect ratio of ${aspectRatio}.` });
 
+        // FIX: Corrected responseModalities to only include IMAGE and removed unsupported imageConfig for gemini-2.5-flash-image model.
         const response = await ai.models.generateContent({
             model: MODEL_ID,
             contents: { parts },
             config: {
-                responseModalities: [Modality.IMAGE, Modality.TEXT],
-                imageConfig: { aspectRatio },
+                responseModalities: [Modality.IMAGE],
             },
         });
 
@@ -107,12 +107,12 @@ export const generateMockup = async (
     const fullPrompt = `${guard} ${prompt}\nThe final output image MUST have an aspect ratio of ${aspectRatio}.`;
     parts.push({ text: fullPrompt });
 
+    // FIX: Corrected responseModalities to only include IMAGE and removed unsupported imageConfig for gemini-2.5-flash-image model.
     const response = await ai.models.generateContent({
         model: MODEL_ID,
         contents: { parts },
         config: {
-            responseModalities: [Modality.IMAGE, Modality.TEXT],
-            imageConfig: { aspectRatio },
+            responseModalities: [Modality.IMAGE],
         },
     });
 

@@ -3,6 +3,7 @@ import { AuthContext } from '../contexts/AuthContext';
 import Button from './common/Button';
 import Select from './common/Select';
 import { useApiKeys } from '../hooks/useApiKeys';
+import { User } from '../types';
 
 const UserManagementPanel: React.FC = () => {
     const { user, users, addUser, updateUser, deleteUser } = useContext(AuthContext);
@@ -22,7 +23,7 @@ const UserManagementPanel: React.FC = () => {
         setError('');
     };
 
-    const handleSelectForEdit = (u: Omit<typeof users[0], 'password'>) => {
+    const handleSelectForEdit = (u: Omit<User, 'password'>) => {
         setEditingUserId(u.id);
         setFormState({ username: u.username, password: '', role: u.role, apiKeyId: u.apiKeyId || '' });
     };
@@ -39,11 +40,11 @@ const UserManagementPanel: React.FC = () => {
             if (editingUserId) {
                 const updates: any = { role: formState.role, apiKeyId: formState.apiKeyId };
                 if (formState.password) { // Only update password if a new one is entered
+                    // Note: AuthContext doesn't handle password updates in Firebase Auth.
+                    // This will be ignored by the updateUser function for the Firestore update.
                     updates.password = formState.password;
                 }
-                 if(formState.username !== users.find(u => u.id === editingUserId)?.username) {
-                    updates.username = formState.username;
-                 }
+                // Username is disabled, so we no longer pass it in updates.
                 updateUser(editingUserId, updates);
             } else {
                 addUser({
@@ -80,7 +81,7 @@ const UserManagementPanel: React.FC = () => {
                 <h4 className="font-bold mb-3">{editingUserId ? 'Edit User' : 'Add New User'}</h4>
                 <form onSubmit={handleSaveUser} className="space-y-3">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                         <input name="username" type="text" placeholder="Username" value={formState.username} onChange={handleFormChange} className="w-full p-2 rounded-lg border border-white/20 bg-black/20 text-gray-200 outline-none" />
+                         <input name="username" type="text" placeholder="Username" value={formState.username} onChange={handleFormChange} className="w-full p-2 rounded-lg border border-white/20 bg-black/20 text-gray-200 outline-none disabled:bg-black/40 disabled:text-gray-500 disabled:cursor-not-allowed" disabled={!!editingUserId} />
                          <input name="password" type="password" placeholder={editingUserId ? "New Password (Optional)" : "Password"} value={formState.password} onChange={handleFormChange} className="w-full p-2 rounded-lg border border-white/20 bg-black/20 text-gray-200 outline-none" />
                          <Select name="role" value={formState.role} onChange={handleFormChange}>
                              <option value="user">User</option>

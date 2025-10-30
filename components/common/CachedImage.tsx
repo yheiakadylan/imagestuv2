@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { getImage, saveImage } from '../../services/cacheService';
-import { blobToDataURL } from '../../utils/fileUtils';
 
 interface CachedImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
     src?: string;
@@ -16,11 +15,10 @@ const CachedImage: React.FC<CachedImageProps> = ({ src, ...props }) => {
             if (!src) {
                 if (isMounted) setImageSrc(null);
                 return;
-            };
+            }
+            if (isMounted) setImageSrc(null); // Reset on src change
 
-            // Reset on src change
-            if (isMounted) setImageSrc(null);
-
+            // 1. Check cache first
             try {
                 const cachedDataUrl = await getImage(src);
                 if (cachedDataUrl) {
@@ -31,23 +29,39 @@ const CachedImage: React.FC<CachedImageProps> = ({ src, ...props }) => {
                 console.warn('Failed to get image from cache:', error);
             }
 
-            try {
-                const response = await fetch(src);
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch image: ${response.statusText}`);
-                }
-                const blob = await response.blob();
-                const dataUrl = await blobToDataURL(blob);
+            // 2. If not in cache, fetch from network via Image/Canvas to bypass CORS issues with fetch()
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.naturalWidth;
+                canvas.height = img.naturalHeight;
+                const ctx = canvas.getContext('2d');
                 
-                if (isMounted) setImageSrc(dataUrl);
+                if (!ctx) {
+                    console.error('Canvas context is not available. Falling back to direct URL.');
+                    if (isMounted) setImageSrc(src);
+                    return;
+                }
 
-                // Don't await save, let it happen in the background
-                saveImage(src, dataUrl).catch(err => console.warn('Failed to cache image:', err));
-
-            } catch (error) {
-                console.error(`Failed to load image from network: ${src}`, error);
-                if (isMounted) setImageSrc(src); // Fallback to src if fetch fails
-            }
+                ctx.drawImage(img, 0, 0);
+                
+                try {
+                    const dataUrl = canvas.toDataURL('image/png');
+                    if (isMounted) setImageSrc(dataUrl);
+                    // Save to cache in the background, don't block rendering
+                    saveImage(src, dataUrl).catch(err => console.warn('Failed to cache image:', err));
+                } catch (e) {
+                    console.error('Canvas toDataURL failed, likely due to CORS tainting. Falling back to direct URL.', e);
+                    if (isMounted) setImageSrc(src);
+                }
+            };
+            img.onerror = (err) => {
+                console.error(`Failed to load image for caching via Image object: ${src}`, err);
+                // Fallback to using the src directly if the Image object fails to load
+                if (isMounted) setImageSrc(src);
+            };
+            img.src = src;
         };
 
         loadImage();

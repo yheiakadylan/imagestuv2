@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback } from 'react';
 import { ArtRef, Sample, User } from '../types';
 import Button from './common/Button';
 import Select from './common/Select';
@@ -44,7 +44,6 @@ const ArtColumn: React.FC<ArtColumnProps> = ({
     const [isDraggingArt, setIsDraggingArt] = useState(false);
     const [isDraggingSample, setIsDraggingSample] = useState(false);
     const [contextMenu, setContextMenu] = useState<{ position: { x: number, y: number } } | null>(null);
-    const clickTimeoutRef = useRef<number | null>(null);
 
     const { templates: artRefTemplates } = useTemplates<ArtRef>('ARTREF_TEMPLATES');
     const { templates: sampleTemplates } = useTemplates<Sample>('SAMPLE_TEMPLATES');
@@ -160,8 +159,8 @@ const ArtColumn: React.FC<ArtColumnProps> = ({
 
     const currentImage = previews.length > 0 ? previews[currentIndex] : artwork;
 
-    const handleImageSave = async (e: React.MouseEvent<HTMLImageElement>) => {
-        e.preventDefault();
+    const handleImageSave = async (e: React.MouseEvent) => {
+        e.stopPropagation();
         if (!currentImage) return;
         const rect = e.currentTarget.getBoundingClientRect();
         sparkleRef.current?.burst(rect.left + rect.width / 2, rect.top + rect.height / 2, 12);
@@ -169,29 +168,10 @@ const ArtColumn: React.FC<ArtColumnProps> = ({
         downloadDataUrl(dataToSave, `artwork-${Date.now()}.png`);
     };
 
-    const handleImageContextMenu = (e: React.MouseEvent<HTMLImageElement>) => {
-        e.preventDefault();
+    const handleExpandMenu = (e: React.MouseEvent) => {
+        e.stopPropagation();
         if (!currentImage) return;
         setContextMenu({ position: { x: e.clientX, y: e.clientY } });
-    };
-
-    const handleImageClick = (e: React.MouseEvent<HTMLImageElement>) => {
-        if (!currentImage) return;
-
-        if (clickTimeoutRef.current) {
-            // Double click
-            clearTimeout(clickTimeoutRef.current);
-            clickTimeoutRef.current = null;
-            handleImageSave(e);
-        } else {
-            // Single click
-            clickTimeoutRef.current = window.setTimeout(() => {
-                if (currentImage) {
-                    onViewImage(currentImage);
-                }
-                clickTimeoutRef.current = null;
-            }, 300);
-        }
     };
 
     return (
@@ -204,24 +184,27 @@ const ArtColumn: React.FC<ArtColumnProps> = ({
                 onDrop={handleArtworkDrop}
                 className={`relative group h-[34vh] min-h-[240px] flex items-center justify-center rounded-xl bg-[repeating-conic-gradient(#1a1a2e_0%_25%,#2a2a44_0%_50%)] bg-[0_0/20px_20px] border border-[#33334d] overflow-hidden animate-glow transition-all ${isDraggingArtwork ? 'border-2 border-dashed border-blue-500 bg-blue-500/10' : ''}`}
             >
-                {currentImage && (
-                    <img 
-                        id="main-artwork-image"
-                        src={currentImage} 
-                        className="max-w-full max-h-full object-contain rounded-lg cursor-pointer" 
-                        alt="Artwork preview" 
-                        title="Click to View, Double Click to Save, Right Click to Expand"
-                        onClick={handleImageClick}
-                        onContextMenu={handleImageContextMenu}
-                    />
-                )}
-                 {!currentImage && (
+                {currentImage ? (
+                    <>
+                        <img 
+                            id="main-artwork-image"
+                            src={currentImage} 
+                            className="max-w-full max-h-full object-contain rounded-lg" 
+                            alt="Artwork preview" 
+                        />
+                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4 rounded-xl">
+                            <Button variant="ghost" onClick={() => onViewImage(currentImage)}>View</Button>
+                            <Button variant="ghost" onClick={handleImageSave}>Download</Button>
+                            <Button variant="ghost" onClick={handleExpandMenu}>Expand</Button>
+                        </div>
+                    </>
+                ) : (
                     <div className="text-center text-gray-400 p-4 pointer-events-none">
                         <p className="font-bold text-lg">{isDraggingArtwork ? 'Drop to Apply!' : 'Set Artwork'}</p>
                         <p className="text-sm">{isDraggingArtwork ? '' : 'Drag & drop, paste, or add a file.'}</p>
                     </div>
                 )}
-                {previews.length > 1 && (
+                 {previews.length > 1 && (
                     <>
                         <button
                             onClick={(e) => { e.stopPropagation(); onCurrentIndexChange((currentIndex - 1 + previews.length) % previews.length); }}

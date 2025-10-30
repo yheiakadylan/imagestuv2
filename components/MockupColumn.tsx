@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Template, MockupPrompt, LogEntry, User } from '../types';
 import Button from './common/Button';
 import Select from './common/Select';
@@ -37,7 +37,6 @@ const MockupColumn: React.FC<MockupColumnProps> = ({
     const { templates: mockupTemplates } = useTemplates<Template>('TEMPLATES');
     
     const [contextMenu, setContextMenu] = useState<{ target: { logEntry: LogEntry, el: HTMLElement }; position: { x: number, y: number } } | null>(null);
-    const clickTimeoutRef = useRef<number | null>(null);
 
     const parsedPrompts = useMemo((): MockupPrompt[] =>
         prompts.split('\n').map(p => p.trim()).filter(Boolean).map(p => ({ id: `prompt-${Math.random()}`, prompt: p }))
@@ -69,37 +68,26 @@ const MockupColumn: React.FC<MockupColumnProps> = ({
         }
     };
     
-    const handleImageSave = async (e: React.MouseEvent<HTMLImageElement>, result: LogEntry) => {
-        e.preventDefault();
+    const handleImageSave = async (e: React.MouseEvent, result: LogEntry) => {
+        e.stopPropagation();
         const rect = e.currentTarget.getBoundingClientRect();
         sparkleRef.current?.burst(rect.left + rect.width / 2, rect.top + rect.height / 2, 12);
         const dataToSave = isUpscaled ? await upscale2xDataURL(result.dataUrl) : result.dataUrl;
         downloadDataUrl(dataToSave, `${result.type}-${result.id}.png`);
     };
-
-    const handleImageClick = (e: React.MouseEvent<HTMLImageElement>, result: LogEntry) => {
-        if (clickTimeoutRef.current) {
-            // Double click
-            clearTimeout(clickTimeoutRef.current);
-            clickTimeoutRef.current = null;
-            handleImageSave(e, result);
-        } else {
-            // Single click
-            clickTimeoutRef.current = window.setTimeout(() => {
-                onViewImage(result.dataUrl);
-                clickTimeoutRef.current = null;
-            }, 300);
+    
+    const handleExpandClick = (e: React.MouseEvent, result: LogEntry) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const imgEl = document.getElementById(`log-item-${result.id}`);
+        if (imgEl) {
+            setContextMenu({
+                target: { logEntry: result, el: imgEl },
+                position: { x: e.clientX, y: e.clientY }
+            });
         }
     };
 
-    const handleImageContextMenu = (e: React.MouseEvent<HTMLImageElement>, result: LogEntry) => {
-        e.preventDefault();
-        setContextMenu({
-            target: { logEntry: result, el: e.currentTarget },
-            position: { x: e.clientX, y: e.clientY }
-        });
-    };
-    
     const mockupResults = useMemo(() => {
         return [...results].filter(r => r.type === 'mockup').sort((a, b) => b.createdAt - a.createdAt);
     }, [results]);
@@ -158,15 +146,19 @@ const MockupColumn: React.FC<MockupColumnProps> = ({
                             {result.error ? (
                                 <p className="text-red-400 text-xs text-center p-2">{result.error}</p>
                             ) : (
-                                <img
-                                    id={`log-item-${result.id}`}
-                                    src={result.dataUrl}
-                                    alt="Generated mockup"
-                                    className="max-w-full max-h-full object-contain rounded-lg cursor-pointer"
-                                    title="Click to View, Double Click to Save, Right Click to Expand"
-                                    onClick={(e) => handleImageClick(e, result)}
-                                    onContextMenu={(e) => handleImageContextMenu(e, result)}
-                                />
+                                <>
+                                    <img
+                                        id={`log-item-${result.id}`}
+                                        src={result.dataUrl}
+                                        alt="Generated mockup"
+                                        className="max-w-full max-h-full object-contain rounded-lg"
+                                    />
+                                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 rounded-lg">
+                                        <Button variant="ghost" className="!text-xs !px-2 !py-1" onClick={() => onViewImage(result.dataUrl)}>View</Button>
+                                        <Button variant="ghost" className="!text-xs !px-2 !py-1" onClick={(e) => handleImageSave(e, result)}>Download</Button>
+                                        <Button variant="ghost" className="!text-xs !px-2 !py-1" onClick={(e) => handleExpandClick(e, result)}>Expand</Button>
+                                    </div>
+                                </>
                             )}
                         </div>
                     ))}

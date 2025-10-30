@@ -3,8 +3,8 @@ import { db, auth, firebaseConfig } from '../services/firebase';
 import { collection, doc, getDoc, getDocs, query, where, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 // FIX: Added getAuth to the import from firebase/auth
 import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, User as FirebaseUser, getAuth } from 'firebase/auth';
-// FIX: Use named imports for firebase/app functions.
-import { initializeApp, deleteApp } from 'firebase/app';
+// FIX: Use namespaced import for firebase/app to fix module resolution errors.
+import * as firebaseApp from 'firebase/app';
 
 export interface User {
     id: string;
@@ -135,8 +135,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
         
         const tempAppName = `temp-user-creation-${Date.now()}`;
-        // FIX: Call initializeApp directly.
-        const tempApp = initializeApp(firebaseConfig, tempAppName);
+        // FIX: Call initializeApp directly using named import.
+        const tempApp = firebaseApp.initializeApp(firebaseConfig, tempAppName);
         const tempAuth = getAuth(tempApp);
 
         try {
@@ -152,8 +152,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 throw new Error("Failed to create user account.");
             }
         } finally {
-            // FIX: Call deleteApp directly.
-            await deleteApp(tempApp);
+            // FIX: Call deleteApp directly using named import.
+            await firebaseApp.deleteApp(tempApp);
         }
     }, [loadAllUsers]);
 

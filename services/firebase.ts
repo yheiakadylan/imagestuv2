@@ -1,5 +1,5 @@
-// FIX: Use named imports for firebase/app functions.
-import { getApps, initializeApp, getApp } from 'firebase/app';
+// FIX: Use namespaced import for firebase/app to fix module resolution errors.
+import * as firebaseApp from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
@@ -14,8 +14,8 @@ export const firebaseConfig = {
 };
 
 // Initialize Firebase
-// FIX: Call firebase/app functions directly.
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+// FIX: Call Firebase app functions directly using named imports.
+const app = !firebaseApp.getApps().length ? firebaseApp.initializeApp(firebaseConfig) : firebaseApp.getApp();
 
 export const db = getFirestore(app);
 export const auth = getAuth(app);
