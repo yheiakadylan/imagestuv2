@@ -18,6 +18,7 @@ import { useImageLog } from './hooks/useImageLog';
 import { useApiKeys } from './hooks/useApiKeys';
 import ConnectionLines from './components/viewer/ConnectionLines';
 import ImageEditor from './components/ImageEditor';
+import TabBar from './components/TabBar';
 
 
 const App: React.FC = () => {
@@ -35,7 +36,11 @@ const App: React.FC = () => {
     const [progress, setProgress] = useState({ done: 0, total: 0, label: '' });
     const [status, setStatus] = useState<Status>({ message: '', type: 'info', visible: false });
 
-    const [viewingImage, setViewingImage] = useState<string | null>(null);
+    const [viewerData, setViewerData] = useState<{
+        imageUrl: string;
+        sourceId: string;
+        sourceEl: HTMLElement;
+    } | null>(null);
     const [expandedNodes, setExpandedNodes] = useState<ExpandedNode[]>([]);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isImageLogOpen, setIsImageLogOpen] = useState(false);
@@ -47,6 +52,9 @@ const App: React.FC = () => {
     const { apiKeys } = useApiKeys(auth.user);
 
     const userApiKey = apiKeys.find(k => k.id === auth.user?.apiKeyId)?.key;
+
+    // New state for mobile tab navigation
+    const [activeTab, setActiveTab] = useState<'art' | 'cut' | 'mockup'>('art');
 
     const showStatus = (message: string, type: Status['type'] = 'info', duration = 3000) => {
         setStatus({ message, type, visible: true });
@@ -239,6 +247,13 @@ const App: React.FC = () => {
             showStatus(`Failed to save all expanded images: ${error.message}`, 'err');
         }
     };
+    
+    const handleDownloadImage = async (url: string, filename: string) => {
+        sparkleRef.current?.burst(window.innerWidth / 2, window.innerHeight - 50, 15);
+        const dataToSave = isUpscaled ? await upscale2xDataURL(url) : url;
+        downloadDataUrl(dataToSave, filename);
+        showStatus('Downloaded!', 'ok', 2000);
+    };
 
     return (
         <div className="w-screen h-screen bg-[#0d0c1c] text-white flex flex-col font-sans overflow-hidden">
@@ -249,7 +264,18 @@ const App: React.FC = () => {
                 onImageEditorClick={() => setIsImageEditorOpen(true)}
             />
             <StatusToast status={status} />
-            <ImageViewer imageUrl={viewingImage} onClose={() => setViewingImage(null)} />
+            <ImageViewer
+                isOpen={!!viewerData}
+                imageUrl={viewerData?.imageUrl ?? null}
+                onClose={() => setViewerData(null)}
+                onDownload={() => viewerData && handleDownloadImage(viewerData.imageUrl, `${viewerData.sourceId}.png`)}
+                onExpand={(ratio) => {
+                    if (viewerData) {
+                        handleExpandImage({ id: viewerData.sourceId, dataUrl: viewerData.imageUrl }, ratio, viewerData.sourceEl);
+                    }
+                    setViewerData(null); // Close viewer after expanding
+                }}
+            />
             <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
             <ImageLogModal 
                 isOpen={isImageLogOpen} 
@@ -267,48 +293,53 @@ const App: React.FC = () => {
                 user={auth.user}
             />
             
-            <main className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3 p-3 min-h-0">
-                <ArtColumn
-                    artwork={artwork}
-                    previews={previews}
-                    currentIndex={currentIndex}
-                    onCurrentIndexChange={setCurrentIndex}
-                    onArtworkApply={handleApplyArtwork}
-                    artRefs={artRefs}
-                    onArtRefsChange={setArtRefs}
-                    samples={samples}
-                    onSamplesChange={setSamples}
-                    isLoading={isLoading && progress.total === 0}
-                    onGenerate={handleGenerateArt}
-                    onCancel={handleCancel}
-                    user={auth.user}
-                    onViewImage={setViewingImage}
-                    onExpandImage={handleExpandImage}
-                    sparkleRef={sparkleRef}
-                    isUpscaled={isUpscaled}
-                />
-                <CutColumn
-                    artwork={artwork}
-                    template={cutTemplate}
-                    onTemplateChange={setCutTemplate}
-                    user={auth.user as User}
-                />
-                <MockupColumn
-                    isLoading={isLoading && progress.total > 0}
-                    progress={progress}
-                    results={currentMockups}
-                    onGenerate={handleGenerateMockups}
-                    onCancel={handleCancel}
-                    onViewImage={setViewingImage}
-                    onExpandImage={handleExpandImage}
-                    sparkleRef={sparkleRef}
-                    isUpscaled={isUpscaled}
-                    onUpscaleChange={setIsUpscaled}
-                    onSaveAllExpanded={handleSaveAllExpanded}
-                    user={auth.user}
-                />
+            <main className="flex-1 md:grid md:grid-cols-3 gap-3 p-3 min-h-0 pb-16 md:pb-3">
+                <div className={`md:block h-full ${activeTab === 'art' ? 'block' : 'hidden'}`}>
+                    <ArtColumn
+                        artwork={artwork}
+                        previews={previews}
+                        currentIndex={currentIndex}
+                        onCurrentIndexChange={setCurrentIndex}
+                        onArtworkApply={handleApplyArtwork}
+                        artRefs={artRefs}
+                        onArtRefsChange={setArtRefs}
+                        samples={samples}
+                        onSamplesChange={setSamples}
+                        isLoading={isLoading && progress.total === 0}
+                        onGenerate={handleGenerateArt}
+                        onCancel={handleCancel}
+                        user={auth.user}
+                        onViewImage={(imageUrl, sourceId, sourceEl) => setViewerData({ imageUrl, sourceId, sourceEl })}
+                        sparkleRef={sparkleRef}
+                        isUpscaled={isUpscaled}
+                    />
+                </div>
+                 <div className={`md:block h-full ${activeTab === 'cut' ? 'block' : 'hidden'}`}>
+                    <CutColumn
+                        artwork={artwork}
+                        template={cutTemplate}
+                        onTemplateChange={setCutTemplate}
+                        user={auth.user as User}
+                    />
+                </div>
+                 <div className={`md:block h-full ${activeTab === 'mockup' ? 'block' : 'hidden'}`}>
+                    <MockupColumn
+                        isLoading={isLoading && progress.total > 0}
+                        progress={progress}
+                        results={currentMockups}
+                        onGenerate={handleGenerateMockups}
+                        onCancel={handleCancel}
+                        onViewImage={(result, sourceEl) => result.dataUrl && setViewerData({ imageUrl: result.dataUrl, sourceId: `mockup-${result.id}`, sourceEl })}
+                        isUpscaled={isUpscaled}
+                        onUpscaleChange={setIsUpscaled}
+                        onSaveAllExpanded={handleSaveAllExpanded}
+                        user={auth.user}
+                    />
+                </div>
             </main>
             
+            <TabBar activeTab={activeTab} onTabChange={setActiveTab} />
+
             <div className="absolute inset-0 pointer-events-none z-40">
                 <ConnectionLines nodes={expandedNodes} />
                 {expandedNodes.map(node => (
@@ -317,7 +348,10 @@ const App: React.FC = () => {
                         node={node}
                         onClose={handleCloseNode}
                         onPositionChange={handleNodePositionChange}
-                        onViewImage={setViewingImage}
+                        onViewImage={(imageUrl) => {
+                            const el = document.getElementById(`expanded-node-${node.id}`);
+                            if(el) setViewerData({ imageUrl, sourceId: node.id, sourceEl: el });
+                        }}
                         sparkleRef={sparkleRef}
                         isUpscaled={isUpscaled}
                     />

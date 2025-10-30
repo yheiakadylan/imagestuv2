@@ -6,9 +6,10 @@ interface ContextMenuProps {
     position: { x: number, y: number };
     onClose: () => void;
     onSelect: (ratio: string) => void;
+    origin?: 'top-left' | 'top-center';
 }
 
-const ContextMenu: React.FC<ContextMenuProps> = ({ position, onClose, onSelect }) => {
+const ContextMenu: React.FC<ContextMenuProps> = ({ position, onClose, onSelect, origin = 'top-left' }) => {
     const menuRef = useRef<HTMLDivElement>(null);
 
     // Close menu when clicking outside of it
@@ -24,11 +25,20 @@ const ContextMenu: React.FC<ContextMenuProps> = ({ position, onClose, onSelect }
         };
     }, [onClose]);
 
+    const style: React.CSSProperties = {
+        left: position.x,
+        top: position.y,
+    };
+
+    if (origin === 'top-center') {
+        style.transform = 'translate(-50%, -100%)';
+    }
+
     const menuContent = (
         <div 
             ref={menuRef}
-            className="fixed z-[101] animate-fade-in-fast"
-            style={{ left: position.x + 2, top: position.y + 2 }}
+            className="fixed z-[102] animate-fade-in-fast"
+            style={style}
             onContextMenu={(e) => e.preventDefault()} // Prevent another context menu
         >
             <div 

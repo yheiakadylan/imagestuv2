@@ -25,17 +25,23 @@ interface ArtColumnProps {
     onGenerate: (prompt: string, count: number, aspectRatio: string) => void;
     onCancel: () => void;
     user: User | null;
-    onViewImage: (url: string) => void;
-    onExpandImage: (source: { id: string, dataUrl: string }, ratio: string, sourceEl: HTMLElement) => void;
+    onViewImage: (url: string, sourceId: string, el: HTMLElement) => void;
     sparkleRef: React.RefObject<SparkleInstance>;
     isUpscaled: boolean;
 }
+
+const ChevronIcon = ({ isOpen }: { isOpen: boolean }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+    </svg>
+);
+
 
 const ArtColumn: React.FC<ArtColumnProps> = ({
     artwork, previews, currentIndex, onCurrentIndexChange, onArtworkApply,
     artRefs, onArtRefsChange, samples, onSamplesChange,
     isLoading, onGenerate, onCancel, user,
-    onViewImage, onExpandImage, sparkleRef, isUpscaled,
+    onViewImage, sparkleRef, isUpscaled,
 }) => {
     const [prompt, setPrompt] = useState('');
     const [count, setCount] = useState(1);
@@ -43,10 +49,23 @@ const ArtColumn: React.FC<ArtColumnProps> = ({
     const [isDraggingArtwork, setIsDraggingArtwork] = useState(false);
     const [isDraggingArt, setIsDraggingArt] = useState(false);
     const [isDraggingSample, setIsDraggingSample] = useState(false);
-    const [contextMenu, setContextMenu] = useState<{ position: { x: number, y: number } } | null>(null);
+    const [openSections, setOpenSections] = useState<Set<string>>(new Set(['generate']));
+
 
     const { templates: artRefTemplates } = useTemplates<ArtRef>('ARTREF_TEMPLATES');
     const { templates: sampleTemplates } = useTemplates<Sample>('SAMPLE_TEMPLATES');
+
+    const toggleSection = (section: string) => {
+        setOpenSections(prev => {
+            const newSections = new Set(prev);
+            if (newSections.has(section)) {
+                newSections.delete(section);
+            } else {
+                newSections.add(section);
+            }
+            return newSections;
+        });
+    };
 
     const handleArtworkAddFromFile = useCallback(async () => {
         const input = document.createElement('input');
@@ -159,43 +178,35 @@ const ArtColumn: React.FC<ArtColumnProps> = ({
 
     const currentImage = previews.length > 0 ? previews[currentIndex] : artwork;
 
-    const handleImageSave = async (e: React.MouseEvent) => {
-        e.stopPropagation();
+    const handleViewClick = (e: React.MouseEvent) => {
         if (!currentImage) return;
-        const rect = e.currentTarget.getBoundingClientRect();
-        sparkleRef.current?.burst(rect.left + rect.width / 2, rect.top + rect.height / 2, 12);
-        const dataToSave = isUpscaled ? await upscale2xDataURL(currentImage) : currentImage;
-        downloadDataUrl(dataToSave, `artwork-${Date.now()}.png`);
-    };
-
-    const handleExpandMenu = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        if (!currentImage) return;
-        setContextMenu({ position: { x: e.clientX, y: e.clientY } });
+        const el = document.getElementById('main-artwork-image');
+        if (el) {
+            onViewImage(currentImage, 'artwork-preview', el);
+        }
     };
 
     return (
         <div className="bg-white/5 border border-white/10 rounded-2xl p-3.5 flex flex-col min-h-0 backdrop-blur-lg h-full overflow-y-auto">
             <h2 className="text-lg font-bold mb-2">Artwork</h2>
             <div 
+                onClick={handleViewClick}
                 onDragEnter={(e) => handleDragEvent(e, true, setIsDraggingArtwork)}
                 onDragOver={(e) => handleDragEvent(e, true, setIsDraggingArtwork)}
                 onDragLeave={(e) => handleDragEvent(e, false, setIsDraggingArtwork)}
                 onDrop={handleArtworkDrop}
-                className={`relative group h-[34vh] min-h-[240px] flex items-center justify-center rounded-xl bg-[repeating-conic-gradient(#1a1a2e_0%_25%,#2a2a44_0%_50%)] bg-[0_0/20px_20px] border border-[#33334d] overflow-hidden animate-glow transition-all ${isDraggingArtwork ? 'border-2 border-dashed border-blue-500 bg-blue-500/10' : ''}`}
+                className={`relative group h-[34vh] min-h-[240px] flex items-center justify-center rounded-xl bg-[repeating-conic-gradient(#1a1a2e_0%_25%,#2a2a44_0%_50%)] bg-[0_0/20px_20px] border border-[#33334d] overflow-hidden animate-glow transition-all ${isDraggingArtwork ? 'border-2 border-dashed border-blue-500 bg-blue-500/10' : ''} ${currentImage ? 'cursor-zoom-in' : ''}`}
             >
                 {currentImage ? (
                     <>
                         <img 
                             id="main-artwork-image"
                             src={currentImage} 
-                            className="max-w-full max-h-full object-contain rounded-lg" 
+                            className="max-w-full max-h-full object-contain rounded-lg pointer-events-none" 
                             alt="Artwork preview" 
                         />
-                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4 rounded-xl">
-                            <Button variant="ghost" onClick={() => onViewImage(currentImage)}>View</Button>
-                            <Button variant="ghost" onClick={handleImageSave}>Download</Button>
-                            <Button variant="ghost" onClick={handleExpandMenu}>Expand</Button>
+                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4 rounded-xl pointer-events-none">
+                            <p className="text-lg font-bold">View Details</p>
                         </div>
                     </>
                 ) : (
@@ -231,93 +242,112 @@ const ArtColumn: React.FC<ArtColumnProps> = ({
                 )}
             </div>
             
-            <h3 className="text-base font-bold mt-4 mb-2">Generate Artwork</h3>
-            <div className="grid grid-cols-2 gap-4 mb-2">
-                <div>
-                    <label className="text-sm text-gray-400 mb-1 block">Ratio</label>
-                    <Select value={aspectRatio} onChange={e => setAspectRatio(e.target.value)}>
-                        {ASPECT_RATIOS.map(r => <option key={r} value={r}>{r}</option>)}
-                    </Select>
+            <div className="mt-2">
+                {/* Generate Artwork Accordion */}
+                <div className="border-t border-white/10">
+                    <button onClick={() => toggleSection('generate')} className="w-full flex justify-between items-center py-3 text-base font-bold">
+                        <span>Generate Artwork</span>
+                        <ChevronIcon isOpen={openSections.has('generate')} />
+                    </button>
+                    <div className={`grid transition-all duration-300 ease-in-out ${openSections.has('generate') ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
+                        <div className="overflow-hidden">
+                            <div className="pb-2">
+                                <div className="grid grid-cols-2 gap-4 mb-2">
+                                    <div>
+                                        <label className="text-sm text-gray-400 mb-1 block">Ratio</label>
+                                        <Select value={aspectRatio} onChange={e => setAspectRatio(e.target.value)}>
+                                            {ASPECT_RATIOS.map(r => <option key={r} value={r}>{r}</option>)}
+                                        </Select>
+                                    </div>
+                                    <div>
+                                        <label className="text-sm text-gray-400 mb-1 block">Images</label>
+                                        <Select value={count} onChange={e => setCount(Number(e.target.value))}>
+                                            {[1, 2, 4, 8].map(n => <option key={n} value={n}>{n}</option>)}
+                                        </Select>
+                                    </div>
+                                </div>
+                                <TextArea placeholder="Describe the artwork..." value={prompt} onChange={e => setPrompt(e.target.value)} className="h-24" />
+                                <div className="flex items-center gap-2 mt-2">
+                                    <Button variant="ghost" onClick={() => onGenerate(prompt, count, aspectRatio)} disabled={isLoading || !prompt}>
+                                        {isLoading ? <><Spinner className="mr-2"/> Generating...</> : 'Generate'}
+                                    </Button>
+                                    <Button variant="primary" onClick={() => onArtworkApply(previews[currentIndex])} disabled={previews.length === 0}>Apply</Button>
+                                    <div className="h-6 w-px bg-white/20 mx-1"></div>
+                                    <Button variant="ghost" onClick={handleArtworkAddFromFile}>Add</Button>
+                                    <Button variant="ghost" onClick={handleArtworkPaste}>Paste</Button>
+                                    {isLoading && <Button variant="warn" onClick={onCancel} className="ml-auto">Cancel</Button>}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div>
-                    <label className="text-sm text-gray-400 mb-1 block">Images</label>
-                    <Select value={count} onChange={e => setCount(Number(e.target.value))}>
-                        {[1, 2, 4, 8].map(n => <option key={n} value={n}>{n}</option>)}
-                    </Select>
-                </div>
-            </div>
-            <TextArea placeholder="Describe the artwork..." value={prompt} onChange={e => setPrompt(e.target.value)} className="h-24" />
-            <div className="flex items-center gap-2 mt-2">
-                <Button variant="ghost" onClick={() => onGenerate(prompt, count, aspectRatio)} disabled={isLoading || !prompt}>
-                    {isLoading ? <><Spinner className="mr-2"/> Generating...</> : 'Generate'}
-                </Button>
-                <Button variant="primary" onClick={() => onArtworkApply(previews[currentIndex])} disabled={previews.length === 0}>Apply</Button>
-                <div className="h-6 w-px bg-white/20 mx-1"></div>
-                <Button variant="ghost" onClick={handleArtworkAddFromFile}>Add</Button>
-                <Button variant="ghost" onClick={handleArtworkPaste}>Paste</Button>
-                {isLoading && <Button variant="warn" onClick={onCancel} className="ml-auto">Cancel</Button>}
-            </div>
 
-            <div 
-                onDragEnter={(e) => handleDragEvent(e, true, setIsDraggingArt)}
-                onDragOver={(e) => handleDragEvent(e, true, setIsDraggingArt)}
-                onDragLeave={(e) => handleDragEvent(e, false, setIsDraggingArt)}
-                onDrop={(e) => handleDrop(e, onArtRefsChange, setIsDraggingArt)}
-                className={`p-2 rounded-lg border-2 border-dashed transition-colors ${isDraggingArt ? 'border-blue-500 bg-blue-500/10' : 'border-transparent'}`}
-            >
-                <h3 className="text-base font-bold mt-2 mb-2">Artwork References</h3>
-                <div className="flex items-center gap-2 mb-2">
-                    <Button variant="ghost" onClick={() => handleAddFromFile(onArtRefsChange)}>Add</Button>
-                    <Button variant="ghost" onClick={() => handlePaste(onArtRefsChange)}>Paste</Button>
-                    <Select 
-                        className="max-w-[180px] ml-auto"
-                        onChange={(e) => handleTemplateSelect(e.target.value, artRefTemplates, onArtRefsChange as any)}
-                        value={artRefs.length > 0 ? artRefTemplates.find(t => t.name === artRefs[0].name)?.name || "" : ""}
-                    >
-                        <option value="">— Use Template —</option>
-                        {[...new Set(artRefTemplates.map(t => t.name))].map(name => <option key={name} value={name}>{name}</option>)}
-                    </Select>
+                {/* Artwork References Accordion */}
+                 <div className="border-t border-white/10">
+                    <button onClick={() => toggleSection('references')} className="w-full flex justify-between items-center py-3 text-base font-bold">
+                        <span>Artwork References</span>
+                        <ChevronIcon isOpen={openSections.has('references')} />
+                    </button>
+                     <div className={`grid transition-all duration-300 ease-in-out ${openSections.has('references') ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
+                        <div className="overflow-hidden">
+                             <div 
+                                onDragEnter={(e) => handleDragEvent(e, true, setIsDraggingArt)}
+                                onDragOver={(e) => handleDragEvent(e, true, setIsDraggingArt)}
+                                onDragLeave={(e) => handleDragEvent(e, false, setIsDraggingArt)}
+                                onDrop={(e) => handleDrop(e, onArtRefsChange, setIsDraggingArt)}
+                                className={`p-2 rounded-lg border-2 border-dashed transition-colors ${isDraggingArt ? 'border-blue-500 bg-blue-500/10' : 'border-transparent'}`}
+                            >
+                                <div className="flex items-center gap-2 mb-2">
+                                    <Button variant="ghost" onClick={() => handleAddFromFile(onArtRefsChange)}>Add</Button>
+                                    <Button variant="ghost" onClick={() => handlePaste(onArtRefsChange)}>Paste</Button>
+                                    <Select 
+                                        className="max-w-[180px] ml-auto"
+                                        onChange={(e) => handleTemplateSelect(e.target.value, artRefTemplates, onArtRefsChange as any)}
+                                        value={artRefs.length > 0 ? artRefTemplates.find(t => t.name === artRefs[0].name)?.name || "" : ""}
+                                    >
+                                        <option value="">— Use Template —</option>
+                                        {[...new Set(artRefTemplates.map(t => t.name))].map(name => <option key={name} value={name}>{name}</option>)}
+                                    </Select>
+                                </div>
+                                <ImageGrid items={artRefs} onItemsChange={onArtRefsChange} />
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <ImageGrid items={artRefs} onItemsChange={onArtRefsChange} />
-            </div>
 
-            <div
-                onDragEnter={(e) => handleDragEvent(e, true, setIsDraggingSample)}
-                onDragOver={(e) => handleDragEvent(e, true, setIsDraggingSample)}
-                onDragLeave={(e) => handleDragEvent(e, false, setIsDraggingSample)}
-                onDrop={(e) => handleDrop(e, onSamplesChange, setIsDraggingSample)}
-                className={`p-2 rounded-lg border-2 border-dashed transition-colors ${isDraggingSample ? 'border-blue-500 bg-blue-500/10' : 'border-transparent'}`}
-            >
-                <h3 className="text-base font-bold mt-2 mb-2">Product Samples</h3>
-                <div className="flex items-center gap-2 mb-2">
-                    <Button variant="ghost" onClick={() => handleAddFromFile(onSamplesChange)}>Add</Button>
-                    <Button variant="ghost" onClick={() => handlePaste(onSamplesChange)}>Paste</Button>
-                     <Select 
-                        className="max-w-[180px] ml-auto"
-                        onChange={(e) => handleTemplateSelect(e.target.value, sampleTemplates, onSamplesChange as any)}
-                        value={samples.length > 0 ? sampleTemplates.find(t => t.name === samples[0].name)?.name || "" : ""}
-                    >
-                        <option value="">— Use Template —</option>
-                        {[...new Set(sampleTemplates.map(t => t.name))].map(name => <option key={name} value={name}>{name}</option>)}
-                    </Select>
+                {/* Product Samples Accordion */}
+                <div className="border-t border-white/10">
+                    <button onClick={() => toggleSection('samples')} className="w-full flex justify-between items-center py-3 text-base font-bold">
+                        <span>Product Samples</span>
+                        <ChevronIcon isOpen={openSections.has('samples')} />
+                    </button>
+                    <div className={`grid transition-all duration-300 ease-in-out ${openSections.has('samples') ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
+                        <div className="overflow-hidden">
+                             <div
+                                onDragEnter={(e) => handleDragEvent(e, true, setIsDraggingSample)}
+                                onDragOver={(e) => handleDragEvent(e, true, setIsDraggingSample)}
+                                onDragLeave={(e) => handleDragEvent(e, false, setIsDraggingSample)}
+                                onDrop={(e) => handleDrop(e, onSamplesChange, setIsDraggingSample)}
+                                className={`p-2 rounded-lg border-2 border-dashed transition-colors ${isDraggingSample ? 'border-blue-500 bg-blue-500/10' : 'border-transparent'}`}
+                            >
+                                <div className="flex items-center gap-2 mb-2">
+                                    <Button variant="ghost" onClick={() => handleAddFromFile(onSamplesChange)}>Add</Button>
+                                    <Button variant="ghost" onClick={() => handlePaste(onSamplesChange)}>Paste</Button>
+                                     <Select 
+                                        className="max-w-[180px] ml-auto"
+                                        onChange={(e) => handleTemplateSelect(e.target.value, sampleTemplates, onSamplesChange as any)}
+                                        value={samples.length > 0 ? sampleTemplates.find(t => t.name === samples[0].name)?.name || "" : ""}
+                                    >
+                                        <option value="">— Use Template —</option>
+                                        {[...new Set(sampleTemplates.map(t => t.name))].map(name => <option key={name} value={name}>{name}</option>)}
+                                    </Select>
+                                </div>
+                                <ImageGrid items={samples} onItemsChange={onSamplesChange} />
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <ImageGrid items={samples} onItemsChange={onSamplesChange} />
             </div>
-            
-            {contextMenu && (
-                <ContextMenu
-                    position={contextMenu.position}
-                    onClose={() => setContextMenu(null)}
-                    onSelect={(ratio) => {
-                        const sourceEl = document.getElementById('main-artwork-image');
-                        if (currentImage && sourceEl) {
-                            const imageSource = { id: 'main-artwork-image', dataUrl: currentImage };
-                            onExpandImage(imageSource, ratio, sourceEl as HTMLElement);
-                        }
-                        setContextMenu(null);
-                    }}
-                />
-            )}
 
             <style>{`
                 @keyframes glow {

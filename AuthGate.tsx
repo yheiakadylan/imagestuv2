@@ -1,6 +1,6 @@
 
 
-import React, { useContext, useState } from 'react';
+import React, { useContext, useState, useEffect } from 'react';
 import { AuthContext } from './contexts/AuthContext';
 import App from './App';
 import LoginPage from './components/LoginPage';
@@ -9,6 +9,21 @@ import SignUpPage from './components/SignUpPage';
 const AuthGate: React.FC = () => {
     const auth = useContext(AuthContext);
     const [showSignUp, setShowSignUp] = useState(false);
+
+    useEffect(() => {
+        // Lock scrolling when the user is not logged in (showing login/signup)
+        if (!auth.user) {
+            document.body.style.overflow = 'hidden';
+        } else {
+            // Restore scrolling when the user is logged in
+            document.body.style.overflow = '';
+        }
+
+        // Cleanup on unmount to restore default scroll behavior
+        return () => {
+            document.body.style.overflow = '';
+        };
+    }, [auth.user]);
 
     if (auth.isLoading) {
         return (
